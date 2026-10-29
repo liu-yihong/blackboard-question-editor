@@ -1,11 +1,19 @@
 # Blackboard Question Editor
 
-Write test questions in a friendly editor, check them, and download a file for **Blackboard Ultra → Upload questions from file**. No more clicking "Add question" two hundred times.
+> **Disclaimer:** Blackboard is a trademark of Anthology Inc. This is an independent project and is not affiliated with or endorsed by Anthology.
 
-- **Live site:** <https://liu-yihong.github.io/blackboard-question-editor/> (after GitHub Pages is turned on, see below)
-- **Author:** Yihong Liu, [blog.yihong-liu.com](https://blog.yihong-liu.com/)
+Write test questions in a friendly editor, check them, and download a file for **Blackboard Ultra → Upload questions from file**. No more clicking "Add question" two hundred times. It works with Original course view too
 
-It is a static website: plain HTML, CSS and JavaScript with no server and no build step. Questions never leave the instructor's browser.
+- **Live site:** <https://liu-yihong.github.io/blackboard-question-editor/>
+- **Author:** Yihong Liu (the commander), [blog.yihong-liu.com](https://blog.yihong-liu.com/) & [Claude by Anthropic](https://claude.com/) (who did the dirty coding work)
+
+It is a static website: plain HTML, CSS and JavaScript with no server and no build step. Questions never leave your browser.
+
+## Privacy
+
+Questions stay in your browser. The page never sends them anywhere, and GitHub only sees that someone downloaded the page files.
+
+`index.html` carries a Content Security Policy that only allows files from this site and blocks the page from sending data anywhere. Every library and font is served from this repository, so the page makes no requests to other sites. If someone pastes in a tracker later, the browser blocks it until the policy is deliberately changed.
 
 ## Features
 
@@ -31,25 +39,7 @@ It is a static website: plain HTML, CSS and JavaScript with no server and no bui
   - Clean and modern: *Pico*, *MVP*, *new.css*, *Sakura*.
   - *Day*, *Night* and *Auto* (follow the device) work with Studio and the clean styles.
 
-## Put it online with GitHub Pages (free)
-
-1. Sign in at <https://github.com> as `liu-yihong` and create a **new public repository** named `blackboard-question-editor`. Leave "Add a README file" unticked, since this folder has one.
-2. On the repository page, choose **uploading an existing file** (or **Add file → Upload files**). Drag in everything in this folder, keeping the `css`, `js`, `vendor`, `fonts` and `examples` folders. Then select **Commit changes**.
-   - The `.nojekyll` file is hidden on most computers. GitHub Pages works without it, so don't worry if it doesn't upload.
-3. Open **Settings → Pages**. Under *Build and deployment*, set *Source* to **Deploy from a branch**, choose **main** and **/ (root)**, and select **Save**.
-4. After about a minute the site is live at `https://liu-yihong.github.io/blackboard-question-editor/`.
-
-To publish an update, upload the changed files again; Pages redeploys automatically.
-
-If you pick a different repository name, change the GitHub link in the footer of `index.html` (search for `github.com/liu-yihong`) and the links at the top of this README.
-
-Other free static hosts work with the same files:
-- **Cloudflare Pages** or **Netlify**: drag and drop this folder into their dashboard.
-- **Your institution's web server**: copy the folder to any web directory.
-
-You can also open `index.html` directly from your computer, without hosting.
-
-## How instructors use it
+## How you can use it
 
 1. Write or paste questions. Fix anything flagged in red.
 2. Choose **Download .txt**.
@@ -82,25 +72,9 @@ The `examples` folder has the same MIS question set in three forms:
 - `sample-text-quiz.txt`: the Text-mode format, to paste into the editor.
 - `spreadsheet-template.csv`: one row per question, to fill in with Excel or Google Sheets and then open with *Import questions…*.
 
-## Updating the footer
-
-The footer is in `index.html`, inside `<footer class="site-foot">`.
-- **Last updated date:** change both the `datetime="2026-10-28"` value and the visible text each time you publish changes.
-- **Links:** the blog and GitHub links sit next to the date.
-
-## Privacy
-
-Questions stay in the instructor's browser. The page never sends them anywhere, and GitHub only sees that someone downloaded the page files.
-
-`index.html` carries a Content Security Policy that only allows files from this site and blocks the page from sending data anywhere. Every library and font is served from this repository, so the page makes no requests to other sites. If someone pastes in a tracker later, the browser blocks it until the policy is deliberately changed.
-
-**If you want visitor counts**, avoid general-purpose trackers and session-replay tools.
-- Google Analytics and tag managers can be reconfigured remotely to collect more than page views.
-- Session-replay tools such as Hotjar or Microsoft Clarity record what people type, which here means exam questions and answer keys.
-
-A cookieless page-view counter (GoatCounter, Plausible, or Cloudflare Web Analytics) is a lighter choice. It still needs its domain added to `script-src` and `connect-src`; keep the policy otherwise intact.
-
 ## Licences
+
+The editor's own code: MIT
 
 Third-party parts and their licences:
 - KaTeX: MIT (`vendor/LICENSE-KaTeX.txt`)
@@ -110,7 +84,3 @@ Third-party parts and their licences:
 - Noto Emoji "memo" artwork: Apache 2.0, by Google, via svgmoji (MIT)
 
 The retro and modern styles are re-created in this project's own CSS, inspired by System.css, 98.css, XP.css, 7.css, Pico CSS, MVP.css, new.css and Sakura (all MIT). No code from those projects is included. The editor's Credits window lists them with links.
-
-The editor's own code doesn't have a licence file yet. Without one, others may view the code but not legally reuse it. To let other instructors adapt it, add one on GitHub with **Add file → Create new file**, name it `LICENSE`, and pick a template such as MIT.
-
-Blackboard is a trademark of Anthology Inc. This is an independent project and is not affiliated with or endorsed by Anthology.
