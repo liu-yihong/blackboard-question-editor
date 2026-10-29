@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Blackboard Question Editor</title>
+<meta name="description" content="Write test questions in a form or plain-text editor, check them, and export a file for Blackboard Ultra's Upload questions from file. Runs entirely in your browser.">
+<!--
+  Privacy lock-down: the page may only load files from this site and may not send data anywhere.
+  If you add a page-view counter, add its domain to script-src and connect-src only. See README.md.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/app.css">
+<script src="js/theme.js"></script>
+</head>
+<body>
+<!-- BODY START -->
+<a class="skip" href="#qlist">Skip to questions</a>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <img class="brand-mark" src="favicon.svg" alt="" width="28" height="28">
+      <span class="brand-name">Blackboard Question Editor</span>
+    </div>
+    <div class="title-field">
+      <label for="set-title" class="sr-only">Project title</label>
+      <input id="set-title" type="text" placeholder="Untitled project" autocomplete="off">
+      <span id="save-status" class="save-status" aria-live="polite"></span>
+    </div>
+    <nav class="actions" aria-label="File">
+      <button type="button" id="btn-new" class="btn ghost" data-tip="Start an empty project. Save the current one first if you want to keep it.">New project</button>
+      <button type="button" id="btn-open" class="btn ghost" data-tip="Open a project you saved earlier (a .bbq.json file).">Open project…</button>
+      <button type="button" id="btn-save" class="btn ghost" data-tip="Download this project as a file you can open later or share with a colleague. Shortcut: Ctrl+S (⌘S).">Save project</button>
+      <span class="divider" aria-hidden="true"></span>
+      <button type="button" id="btn-import" class="btn ghost" data-tip="Add questions from a Blackboard .txt upload file, an Excel or CSV sheet, or a plain-text quiz.">Import questions…</button>
+      <button type="button" id="btn-paste" class="btn ghost" data-tip="Paste rows copied from Excel or Google Sheets, or a quiz copied from Word.">Paste questions…</button>
+      <span class="divider" aria-hidden="true"></span>
+      <button type="button" id="btn-help" class="btn ghost" data-tip="How to write questions here and upload them to Blackboard Ultra.">Help</button>
+      <button type="button" id="btn-credits" class="btn ghost" data-tip="Sources, tools and style inspirations behind this editor.">Credits</button>
+    </nav>
+    <label class="skin-pick" for="skin">Style
+      <select id="skin" data-tip="Change how the editor looks. Your questions stay the same.">
+        <option value="studio">Studio (original)</option>
+        <optgroup label="Retro operating system">
+          <option value="system">System (classic Mac)</option>
+          <option value="win98">Windows 98</option>
+          <option value="xp">Windows XP</option>
+          <option value="win7">Windows 7</option>
+        </optgroup>
+        <optgroup label="Clean and modern">
+          <option value="pico">Pico</option>
+          <option value="mvp">MVP</option>
+          <option value="new">new.css</option>
+          <option value="sakura">Sakura</option>
+        </optgroup>
+      </select>
+    </label>
+    <div class="theme-switch" role="group" aria-label="Appearance" data-tip="">
+      <button type="button" data-theme-choice="light" data-tip="Day mode" aria-label="Day mode"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><span>Day</span></button>
+      <button type="button" data-theme-choice="dark" data-tip="Night mode" aria-label="Night mode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><span>Night</span></button>
+      <button type="button" data-theme-choice="auto" data-tip="Follow my device’s light or dark setting" aria-label="Auto: follow my device setting"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" class="fill"/></svg><span>Auto</span></button>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="editor" aria-label="Questions">
+    <div class="editor-bar">
+      <div class="seg" role="tablist" aria-label="Editing mode">
+        <button type="button" role="tab" id="tab-form" aria-selected="true" aria-controls="form-view">Form</button>
+        <button type="button" role="tab" id="tab-text" aria-selected="false" aria-controls="text-view">Text</button>
+      </div>
+      <div class="editor-bar-right">
+        <label class="check"><input type="checkbox" id="opt-previews" checked> Student view</label>
+        <button type="button" id="btn-collapse" class="btn small ghost">Collapse all</button>
+      </div>
+    </div>
+
+    <div id="form-view" role="tabpanel" aria-labelledby="tab-form">
+      <div id="qlist"></div>
+      <div class="addbar" aria-label="Add a question">
+        <span class="addbar-label">Add</span>
+        <div class="addbar-buttons" id="addbar"></div>
+      </div>
+    </div>
+
+    <div id="text-view" role="tabpanel" aria-labelledby="tab-text" hidden>
+      <p class="text-intro">Type or paste a whole quiz. Number each question, put choices on lines starting with <kbd>a.</kbd> <kbd>b.</kbd>, and mark correct choices with <kbd>*</kbd>. Changes sync to the form as you type.</p>
+      <div class="text-wrap">
+        <textarea id="plain" spellcheck="true" aria-label="Questions as text" aria-describedby="text-diag"></textarea>
+      </div>
+      <div id="text-diag" class="diag" aria-live="polite"></div>
+      <details class="cheats" open>
+        <summary>Text format</summary>
+        <div class="cheat-grid">
+<pre class="cheat"><span class="c-h">Multiple choice</span>
+1. Which system records day-to-day
+   transactions such as order entry?
+a. Decision support system
+*b. Transaction processing system
+c. Executive information system</pre>
+<pre class="cheat"><span class="c-h">Multiple answer</span>  (two or more *)
+2. Which are enterprise systems?
+*a. ERP
+*b. CRM
+c. A personal to-do list app
+*d. SCM</pre>
+<pre class="cheat"><span class="c-h">True / False</span>
+3. A data warehouse is optimized for
+   analysis, not for daily transactions.
+Answer: True</pre>
+<pre class="cheat"><span class="c-h">Essay</span>  (no choices, no answer)
+4. Explain one way IT can create a
+   competitive advantage.
+Sample: Names a strategy and a company example.</pre>
+<pre class="cheat"><span class="c-h">Matching</span>
+5. Match each security goal to its meaning.
+a. Confidentiality = Only authorized eyes
+b. Integrity = Data is accurate and unaltered
+c. Availability = Systems are up when needed</pre>
+<pre class="cheat"><span class="c-h">Fill in the blank</span>
+6. SQL stands for Structured ____ Language.
+Answer: Query; query</pre>
+<pre class="cheat"><span class="c-h">Fill in multiple blanks</span>
+7. A [pk] identifies each row; a [fk]
+   links one table to another.
+pk: primary key
+fk: foreign key</pre>
+<pre class="cheat"><span class="c-h">Numeric</span>
+8. A system costs 40,000 and saves 50,000.
+   What is its ROI in percent?
+Answer: 25
+Tolerance: 0.5</pre>
+        </div>
+        <p class="cheat-note">Force a type with a tag after the number: <code>[MC]</code> <code>[MA]</code> <code>[TF]</code> <code>[ESS]</code> <code>[MAT]</code> <code>[FIB]</code> <code>[FMB]</code> <code>[NUM]</code>. Formatting: <code>**bold**</code> <code>_italic_</code> <code>x^2^</code> <code>H~2~O</code> <code>$\frac{a}{b}$</code>. Start a line with <code>\</code> to keep it as text, and lines starting with <code>#</code> are comments.</p>
+      </details>
+    </div>
+  </section>
+
+  <aside class="panel" aria-label="Check and export">
+    <div class="panel-inner">
+      <section class="pblock">
+        <h2 class="ptitle">Check</h2>
+        <p id="sum-line" class="sum-line"></p>
+        <div id="sum-types" class="type-chips"></div>
+        <ul id="issue-list" class="issue-list"></ul>
+      </section>
+
+      <section class="pblock">
+        <h2 class="ptitle">Export for Blackboard Ultra</h2>
+        <fieldset class="opt">
+          <legend>Formatting</legend>
+          <label><input type="radio" name="fmt" value="html" id="fmt-html"> Keep bold, italics and line breaks (HTML)</label>
+          <label><input type="radio" name="fmt" value="plain" id="fmt-plain"> Plain text only</label>
+        </fieldset>
+        <fieldset class="opt">
+          <legend>Math</legend>
+          <label><input type="radio" name="math" value="unicode" id="math-unicode"> Unicode text <span class="hint">x² + √y, works everywhere</span></label>
+          <label><input type="radio" name="math" value="mathml" id="math-mathml"> MathML <span class="hint">real equations, needs HTML</span></label>
+          <label><input type="radio" name="math" value="latex" id="math-latex"> LaTeX source <span class="hint">\( … \) for MathJax</span></label>
+        </fieldset>
+        <div class="file-row">
+          <label for="file-name">File name</label>
+          <div class="file-name-wrap"><input id="file-name" type="text" autocomplete="off" spellcheck="false"><span class="ext">.txt</span></div>
+        </div>
+        <div class="export-buttons">
+          <button type="button" id="btn-download" class="btn primary">Download .txt</button>
+          <button type="button" id="btn-copy" class="btn">Copy</button>
+        </div>
+        <p class="fineprint">If nothing downloads, choose Copy, paste into Notepad or TextEdit, and save it as a .txt file.</p>
+        <details id="raw-details" class="raw">
+          <summary>Show file contents</summary>
+          <pre id="raw-out" class="raw-out" tabindex="0" aria-label="Upload file contents"></pre>
+        </details>
+        <button type="button" id="btn-testfile" class="linkish">Download a formatting test file</button>
+      </section>
+
+      <section class="pblock">
+        <h2 class="ptitle">Upload in Ultra</h2>
+        <ol class="steps">
+          <li>Open your test and select the <b>+</b> where questions should go.</li>
+          <li>Choose <b>Upload questions from file</b> and pick the .txt file.</li>
+          <li>Set point values. Uploaded questions start at 0 points (or the test default).</li>
+        </ol>
+        <p class="fineprint">For a question bank: Question Banks → <b>+</b> → Import from file, or add the uploaded questions to a bank from the test.</p>
+      </section>
+      <p class="privacy">Everything stays in this browser. Nothing is sent to a server. Not affiliated with Anthology or Blackboard.</p>
+    </div>
+  </aside>
+</main>
+
+<footer class="site-foot">
+  <div class="foot-inner">
+    <p class="foot-owner">
+      <span class="foot-kicker">Who’s behind this?</span>
+      This page is a side project by <b class="owner-name">Yihong Liu</b>, an instructor who clicked “Add question” in Blackboard Ultra one time too many and decided his mouse deserved a pension.
+      It runs on free hosting, strong tea and a mild grudge against dropdown menus.
+      Your questions never leave your browser: not to Yihong, not to GitHub, not to a suspiciously helpful cloud.
+    </p>
+    <p class="foot-meta">
+      <span>Last updated <time datetime="2026-10-28">October 28, 2026</time></span>
+      <a href="https://blog.yihong-liu.com/" target="_blank" rel="noopener noreferrer">Yihong’s blog</a>
+      <a href="https://github.com/liu-yihong/blackboard-question-editor" target="_blank" rel="noopener noreferrer">Source code on GitHub</a>
+    </p>
+  </div>
+</footer>
+
+<div id="modal-root"></div>
+<div id="toast-root" class="toast-root" aria-live="polite"></div>
+<input type="file" id="file-input" accept=".txt,.tsv,.csv,.xlsx,.xls,.json" hidden>
+<!-- BODY END -->
+<script defer src="vendor/katex.min.js"></script>
+<script defer src="js/richtext.js"></script>
+<script defer src="js/model.js"></script>
+<script defer src="js/bbtxt.js"></script>
+<script defer src="js/plaintext.js"></script>
+<script defer src="js/app.js"></script>
+</body>
+</html>

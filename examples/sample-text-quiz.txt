@@ -1,0 +1,33 @@
+1. Which type of information system records day-to-day transactions such as order entry and payroll?
+a. Decision support system
+*b. Transaction processing system
+c. Executive information system
+d. Expert system
+
+2. Which of these are dimensions of data quality?
+*a. Accuracy
+*b. Timeliness
+c. Number of cups of tea the analyst drank
+*d. Completeness
+
+3. A data warehouse is usually optimized for analysis rather than for processing daily transactions.
+Answer: True
+
+4. Pick one of Porter’s five forces and explain how a new information system could change it. Use a real or realistic company as your example.
+Sample: Names the force, describes the system, and connects the two with a concrete business example (for example, an online ordering platform raising switching costs for customers).
+
+5. Match each security goal to its meaning.
+a. Confidentiality = Only authorized people can see the data
+b. Integrity = Data is accurate and has not been altered
+c. Availability = Systems and data are there when they are needed
+
+6. SQL stands for Structured ____ Language.
+Answer: Query
+
+7. A [x] uniquely identifies each row in a table, and a [y] links one table to another.
+x: primary key
+y: foreign key
+
+8. Professor Liu forgot to switch off a cloud server that costs 25 cents per hour. What did 30 days (720 hours) of running nonstop cost him, in dollars?
+Answer: 180
+Tolerance: 0

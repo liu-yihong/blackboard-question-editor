@@ -1,0 +1,9 @@
+Type,Question,Answer 1 / match / accepted answer,correct|incorrect / match,Answer 2,correct|incorrect,Answer 3,correct|incorrect,Answer 4,correct|incorrect
+MC,Which type of information system records day-to-day transactions such as order entry and payroll?,Decision support system,incorrect,Transaction processing system,correct,Executive information system,incorrect,Expert system,incorrect
+MA,Which of these are dimensions of data quality?,Accuracy,correct,Timeliness,correct,Number of cups of tea the analyst drank,incorrect,Completeness,correct
+TF,A data warehouse is usually optimized for analysis rather than for processing daily transactions.,true
+ESS,Pick one of Porter’s five forces and explain how a new information system could change it. Use a real or realistic company as your example.,"Names the force, describes the system, and connects the two with a concrete business example (for example, an online ordering platform raising switching costs for customers)."
+MAT,Match each security goal to its meaning.,Confidentiality,Only authorized people can see the data,Integrity,Data is accurate and has not been altered,Availability,Systems and data are there when they are needed
+FIB,SQL stands for Structured ____ Language.,Query
+FIB_PLUS,"A [x] uniquely identifies each row in a table, and a [y] links one table to another.",x,primary key,,y,foreign key
+NUM,"Professor Liu forgot to switch off a cloud server that costs 25 cents per hour. What did 30 days (720 hours) of running nonstop cost him, in dollars?",180,0
