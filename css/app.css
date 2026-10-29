@@ -50,6 +50,12 @@
 @font-face { font-family: "BQE Fallback Mono"; src: url("../fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400 500; font-style: normal; font-display: swap; }
 
 * { box-sizing: border-box; }
+
+/* Until the editor's first render (js/theme.js adds the class, js/app.js removes it), hide the parts
+   that move when questions are drawn, so the page does not jump. If a script fails, the timed
+   animation shows them anyway after 4 seconds; !important keeps it under reduced-motion too. */
+.bqe-loading main.layout, .bqe-loading .site-foot { visibility: hidden; animation: bqe-reveal 0s linear 4s forwards !important; }
+@keyframes bqe-reveal { to { visibility: visible; } }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
@@ -287,9 +293,9 @@ math { font-size: 1.08em; }
 .panel-inner { display: flex; flex-direction: column; gap: 14px; }
 .pblock { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); min-width: 0; }
 .ptitle { font-family: var(--font-display); font-weight: 600; font-size: 16px; margin: 0 0 8px; text-wrap: balance; }
-.sum-line { margin: 0 0 8px; font-size: 14.5px; }
+.sum-line { margin: 0 0 8px; font-size: 14.5px; min-height: 1.9em; }
 .sum-line .big { font-family: var(--font-display); font-size: 22px; font-weight: 600; margin-right: 4px; font-variant-numeric: tabular-nums; }
-.type-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.type-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; min-height: 1.5em; }
 .chip { font: 500 12px var(--font-mono); background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; color: var(--muted); }
 .issue-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow: auto; }
 .issue-list button { all: unset; cursor: pointer; display: block; font-size: 13px; padding: 5px 8px; border-radius: 5px; line-height: 1.4; }

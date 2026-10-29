@@ -1291,6 +1291,8 @@
   }
   const slugKeep = (s) => String(s || '').replace(/\.txt$/i, '').replace(/[\\/:*?"<>|]+/g, '-').trim();
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
+  // Show the editor once it is drawn (css/app.css hides it while the page has the bqe-loading class).
+  const start = () => { try { init(); } finally { document.documentElement.classList.remove('bqe-loading'); } };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })();

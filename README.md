@@ -56,7 +56,7 @@ Points, feedback and images can't be set in an upload file; add them in Blackboa
 index.html          page markup, footer text and Content Security Policy
 favicon.svg         logo and browser-tab icon (Noto Emoji "memo")
 css/app.css         all styling, including the nine styles
-js/theme.js         applies the saved style and Day/Night choice before the page paints
+js/theme.js         applies the saved style and Day/Night choice before the page paints, and hides the editor until it is drawn
 js/richtext.js      formatting and math markup
 js/model.js         question types and checks
 js/bbtxt.js         reading and writing Blackboard's tab-delimited files
