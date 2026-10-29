@@ -189,6 +189,7 @@ Tolerance: 0.5</pre>
           <button type="button" id="btn-download" class="btn primary">Download .txt</button>
           <button type="button" id="btn-copy" class="btn">Copy</button>
         </div>
+        <button type="button" id="btn-pool" class="btn wide-btn" data-tip="A Blackboard question pool package for Question banks → Import from file. Each question is worth 1 point.">Download question bank (.zip)</button>
         <p class="fineprint">If nothing downloads, choose Copy, paste into Notepad or TextEdit, and save it as a .txt file.</p>
         <details id="raw-details" class="raw">
           <summary>Show file contents</summary>
@@ -204,7 +205,12 @@ Tolerance: 0.5</pre>
           <li>Choose <b>Upload questions from file</b> and pick the .txt file.</li>
           <li>Set point values. Uploaded questions start at 0 points (or the test default).</li>
         </ol>
-        <p class="fineprint">For a question bank: Question Banks → <b>+</b> → Import from file, or add the uploaded questions to a bank from the test.</p>
+        <h3 class="psub">Or as a question bank</h3>
+        <ol class="steps">
+          <li>Choose <b>Download question bank (.zip)</b>. Don’t unzip it.</li>
+          <li>In Ultra, open <b>Manage banks</b> and choose <b>Import from file</b>, then pick the .zip. (Original view: Pools → Import Pool.)</li>
+          <li>The bank takes the project title as its name, and each question is worth 1 point.</li>
+        </ol>
       </section>
       <p class="privacy">Everything stays in this browser. Nothing is sent to a server. Not affiliated with Anthology or Blackboard.</p>
     </div>
@@ -236,6 +242,7 @@ Tolerance: 0.5</pre>
 <script defer src="js/richtext.js"></script>
 <script defer src="js/model.js"></script>
 <script defer src="js/bbtxt.js"></script>
+<script defer src="js/bbpool.js"></script>
 <script defer src="js/plaintext.js"></script>
 <script defer src="js/app.js"></script>
 </body>

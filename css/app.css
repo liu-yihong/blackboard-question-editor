@@ -316,6 +316,8 @@ math { font-size: 1.08em; }
 .file-name-wrap .ext { padding-right: 10px; color: var(--faint); font-family: var(--font-mono); font-size: 13.5px; }
 .export-buttons { display: flex; gap: 8px; margin-top: 12px; }
 .export-buttons .primary { flex: 1 1 auto; }
+.wide-btn { width: 100%; margin-top: 8px; }
+.psub { font-size: 13.5px; margin: 14px 0 6px; }
 .fineprint { font-size: 12.5px; color: var(--muted); margin: 8px 0 0; }
 .raw { margin: 10px 0 8px; }
 .raw summary { cursor: pointer; font-size: 13.5px; color: var(--muted); }

@@ -734,6 +734,9 @@
     dl.textContent = ex.parts.length > 1 ? 'Download ' + ex.parts.length + ' .txt files' : 'Download .txt' + (ex.included ? ' (' + ex.included + ')' : '');
     dl.disabled = !ex.included;
     $('#btn-copy').disabled = !ex.included;
+    const pool = $('#btn-pool');
+    pool.textContent = 'Download question bank (.zip)' + (ex.included ? ' (' + ex.included + ')' : '');
+    pool.disabled = !ex.included;
     if ($('#raw-details').open) renderRaw(ex);
     const fn = $('#file-name');
     if (document.activeElement !== fn) fn.value = fileBase();
@@ -806,6 +809,30 @@
       ex.parts.forEach((p, i) => setTimeout(() => download(base + '-part' + (i + 1) + '.txt', p), i * 400));
       toast('Downloaded ' + ex.parts.length + ' files. Upload them one at a time.');
     }
+  }
+
+  function doDownloadPool(includeInvalid) {
+    const ex = BQ.pool.exportPool(project.questions, project.settings, { includeInvalid, title: project.title || fileBase() });
+    if (ex.skipped.length && !includeInvalid) {
+      openModal({
+        title: ex.skipped.length === 1 ? '1 question needs fixing' : ex.skipped.length + ' questions need fixing',
+        body: [
+          h('p', null, 'Blackboard can’t import questions with these problems, so they will be left out of the bank. The other ' + ex.included + ' will be included.'),
+          h('ul', null, ex.skipped.slice(0, 12).map(s => h('li', null, 'Q' + (s.index + 1) + ': ' + s.errors[0])))
+        ],
+        actions: [
+          { label: 'Fix them first', onclick: () => { closeModal(); goTo(ex.skipped[0].index); } },
+          { label: 'Download ' + ex.included, primary: true, disabled: !ex.included, onclick: () => { closeModal(); savePool(ex); } }
+        ]
+      });
+      return;
+    }
+    savePool(ex);
+  }
+  function savePool(ex) {
+    const name = fileBase() + '.zip';
+    download(name, ex.bytes, 'application/zip');
+    toast('Downloaded ' + name + ' with ' + ex.included + (ex.included === 1 ? ' question.' : ' questions.') + ' Import it in Question banks without unzipping.');
   }
 
   async function copyTxt() {
@@ -1274,6 +1301,7 @@
     });
     $('#btn-download').addEventListener('click', () => doDownload(false));
     $('#btn-copy').addEventListener('click', copyTxt);
+    $('#btn-pool').addEventListener('click', () => doDownloadPool(false));
     $('#btn-testfile').addEventListener('click', testFile);
     $('#raw-details').addEventListener('toggle', (e) => { if (e.target.open) renderRaw(); });
 

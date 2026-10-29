@@ -32,6 +32,7 @@ Questions stay in your browser. The page never sends them anywhere, and GitHub o
   - Any of these files can also be dropped onto the page.
   - Hover over a top-bar button to see what it does.
 - **Saving**: work autosaves in the browser.
+- **Question bank export**: *Download question bank (.zip)* builds a Blackboard question pool package for Ultra's *Manage banks → Import from file* (or *Pools → Import Pool* in Original view). All 8 types are included, at 1 point each.
 - **Large sets**: sets over 250 questions download as several files, because Blackboard recommends at most 250 questions per upload.
 - **Nine styles** from the *Style* menu, remembered per browser:
   - *Studio* (the original look).
@@ -46,7 +47,7 @@ Questions stay in your browser. The page never sends them anywhere, and GitHub o
 3. In Blackboard Ultra, open the test and select **+ → Upload questions from file**, then choose the file.
 4. Set point values in Blackboard. Uploaded questions start at 0 points, or at the test's default.
 
-For a question bank, go to Question Banks and choose **+ → Import from file**. Or upload the questions into a test, then reuse them from a bank.
+For a question bank, choose **Download question bank (.zip)** instead. In Ultra, open **Manage banks → Import from file** and pick the .zip without unzipping it. The bank is named after the project title, and each question is worth 1 point.
 
 Points, feedback and images can't be set in an upload file; add them in Blackboard afterwards. Bold, italics and math can display differently depending on how a school has set up Blackboard. The **Download a formatting test file** link in the editor makes a three-question file to try once in a practice test.
 
@@ -60,6 +61,7 @@ js/theme.js         applies the saved style and Day/Night choice before the page
 js/richtext.js      formatting and math markup
 js/model.js         question types and checks
 js/bbtxt.js         reading and writing Blackboard's tab-delimited files
+js/bbpool.js        writing Blackboard question pool packages (.zip) for bank import
 js/plaintext.js     Text mode (numbered quiz format)
 js/app.js           the editor interface
 vendor/             KaTeX (math preview) and SheetJS (Excel import), served locally
