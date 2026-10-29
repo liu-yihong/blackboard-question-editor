@@ -55,7 +55,8 @@
   };
 
   /* ---------- state ---------- */
-  const DEFAULT_SETTINGS = { format: 'html', math: 'unicode', fileName: '' };
+  const DEFAULT_SETTINGS = { format: 'html', math: 'unicode', fileName: '', feedback: true };
+  const feedbackOn = () => project.settings.feedback !== false;
   let project = null;
   let view = 'form';
   let textStale = true;   // text mode needs regenerating from the model
@@ -65,19 +66,146 @@
   let showPreviews = true;
   let activeField = null;
 
-  function makeProject(title, questions, settings) {
-    return { title: title || '', questions: questions || [], settings: Object.assign({}, DEFAULT_SETTINGS, settings || {}) };
+  function makeProject(title, questions, settings, images) {
+    return { title: title || '', questions: questions || [], settings: Object.assign({}, DEFAULT_SETTINGS, settings || {}), images: cleanImages(images) };
   }
+
+  /* ---------- pictures ----------
+   * Stored in the project as { "chart.png": { type: "image/png", data: "<base64>" } } and
+   * referenced from any field as <img src="chart.png" alt="…">.
+   */
+  const IMG_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg' };
+  const MAX_SIDE = 1600;
+  function cleanImages(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object') return out;
+    for (const k in raw) {
+      const v = raw[k];
+      if (BQ.rt.isLocalImage(k) && v && IMG_TYPES[v.type] && typeof v.data === 'string' && /^[A-Za-z0-9+/=]+$/.test(v.data)) out[k] = { type: v.type, data: v.data };
+    }
+    return out;
+  }
+  const imageUrls = new Map(); // name → { data, url } blob URLs for previews
+  function imageUrl(name) {
+    const img = project.images[name];
+    if (!img) return null;
+    const hit = imageUrls.get(name);
+    if (hit && hit.data === img.data) return hit.url;
+    if (hit) URL.revokeObjectURL(hit.url);
+    const bin = atob(img.data);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([bytes], { type: img.type }));
+    imageUrls.set(name, { data: img.data, url });
+    return url;
+  }
+  /** Pictures that no question uses any more. */
+  function pruneImages(p) {
+    const used = new Set();
+    p.questions.forEach(q => BQ.imagesInQuestion(q).forEach(n => used.add(n)));
+    for (const k in p.images) if (!used.has(k)) delete p.images[k];
+  }
+  function uniqueImageName(file, data) {
+    const ext = IMG_TYPES[file.type] || 'png';
+    let base = String(file.name || '').replace(/\.[^.]*$/, '').normalize('NFKD').replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
+    if (!base || /^image$/i.test(base)) base = 'picture';
+    for (let n = 1; ; n++) {
+      const name = (n === 1 && base !== 'picture' ? base : base + '-' + n) + '.' + ext;
+      const cur = project.images[name];
+      if (!cur || cur.data === data) return name;
+    }
+  }
+  const readAsDataUrl = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
+  /** Shrink big photos and screenshots so projects stay small enough to autosave. */
+  async function shrinkIfLarge(file) {
+    if (file.type === 'image/svg+xml' || file.type === 'image/gif') return file;
+    let bmp;
+    try { bmp = await createImageBitmap(file); } catch (e) { return file; }
+    const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+    if (scale === 1 && file.size < 700 * 1024) return file;
+    const c = document.createElement('canvas');
+    c.width = Math.round(bmp.width * scale);
+    c.height = Math.round(bmp.height * scale);
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const type = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+    let out = await new Promise(r => c.toBlob(r, type, 0.85));
+    if (out && type === 'image/png' && out.size > 700 * 1024) out = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+    if (!out || (scale === 1 && out.size >= file.size)) return file;
+    return new File([out], file.name.replace(/\.[^.]*$/, '') + (out.type === 'image/jpeg' ? '.jpg' : '.png'), { type: out.type });
+  }
+  /** Add a picture file to the project and type its tag into a field. */
+  /** Store a picture file in the project. Returns { name, width } or null. */
+  async function storePicture(file) {
+    if (!IMG_TYPES[file.type]) { toast('Use a PNG, JPEG, GIF, WebP or SVG picture.'); return null; }
+    try {
+      const f = await shrinkIfLarge(file);
+      const data = String(await readAsDataUrl(f)).replace(/^data:[^,]*,/, '');
+      if (data.length > 2.8e6) { toast('That picture is over 2 MB. Make it smaller and try again.'); return null; }
+      const name = uniqueImageName(f, data);
+      project.images[name] = { type: f.type, data };
+      let width = null;
+      try { const bmp = await createImageBitmap(f); width = bmp.width; } catch (e) { /* SVG or unreadable size */ }
+      return { name, width };
+    } catch (e) {
+      toast('Could not read that picture.');
+      return null;
+    }
+  }
+  /** Add a picture file to the project and put it into a field. */
+  async function insertPicture(field, file) {
+    if (!field) return;
+    if (field.isRichField) field.saveSelection();
+    const pic = await storePicture(file);
+    if (!pic) return;
+    if (field.isRichField) {
+      // start no wider than the question area; the settings panel can change it
+      const cap = field.multiline ? 480 : 160;
+      field.insertPicture(pic.name, { width: pic.width && pic.width > cap ? cap : null });
+      return;
+    }
+    try {
+      const name = pic.name;
+      const tag = '<img src="' + name + '" alt="describe the picture">';
+      const at = tag.indexOf('describe');
+      const multi = field.tagName === 'TEXTAREA';
+      const before = multi && field.selectionStart > 0 && field.value[field.selectionStart - 1] !== '\n' ? '\n' : '';
+      insertText(field, before + tag, before.length + at, before.length + at + 'describe the picture'.length);
+      toast('Picture added. Type a short description for students who use screen readers.');
+    } catch (e) {
+      toast('Could not read that picture.');
+    }
+  }
+  let pictureCallback = null;
+  function pickPicture(fn) {
+    pictureCallback = fn;
+    $('#picture-input').click();
+  }
+  const pictureTarget = (el) => {
+    if (!el || !el.closest) return null;
+    if (el.id === 'plain') return el;
+    return el.closest('.rf');
+  };
+  /** A visual field (js/richfield.js) wired to this project's pictures. */
+  function field(o) {
+    return BQ.richField(Object.assign({
+      imageUrl,
+      pickPicture: (cb) => pickPicture(async (file) => { const pic = await storePicture(file); cb(pic && pic.name); }),
+      onPastePicture: (f, file) => insertPicture(f, file)
+    }, o));
+  }
+  const imageFiles = (dt) => Array.from((dt && dt.files) || []).filter(f => /^image\//.test(f.type));
 
   const OLD_SAMPLE_TITLES = ['Example: Week 3 quiz on cell biology'];
   const isOldSample = (p) => OLD_SAMPLE_TITLES.includes(p.title) || /Professor Roy|coffee (machine|roaster)/.test(JSON.stringify(p.questions));
   function sampleProject() {
     const text = [
       '1. Which enterprise system integrates finance, HR, procurement and manufacturing data in one shared database?',
-      'a. Customer relationship management (CRM)', '*b. Enterprise resource planning (ERP)', 'c. Supply chain management (SCM)', 'd. Transaction processing system (TPS)', '',
+      'a. Customer relationship management (CRM)', '*b. Enterprise resource planning (ERP)', 'c. Supply chain management (SCM)', 'd. Transaction processing system (TPS)',
+      'Correct feedback: Right. ERP systems share one database across the whole firm.', 'Incorrect feedback: Look for the system that spans finance, HR, procurement **and** manufacturing.', '',
       '2. Select **all** of the five components of an information system.',
       '*a. Hardware', '*b. Software', '*c. Data', '*d. Procedures', '*e. People', 'f. The department tea kettle _(Professor Liu may disagree)_', '',
-      '3. In a relational database, the same foreign key value can appear in many rows of the referencing table.', 'Answer: True', '',
+      '3. In a relational database, the same foreign key value can appear in many rows of the referencing table.', 'Answer: True',
+      'Incorrect feedback: Many orders can point to the same customer, so the foreign key repeats.', '',
       '4. Clicking “Add question” 200 times in a web form is an efficient business process.', 'Answer: False', '',
       '5. A local tea shop wants to start selling loose-leaf tea online. Recommend whether it should build a custom ordering system or subscribe to a SaaS e-commerce platform. Use _total cost of ownership_ and strategic fit in your answer.',
       'Sample: Recommends SaaS for a small firm: low upfront cost, vendor handles security and updates, faster launch. Notes when custom would win: unique processes that create competitive advantage.', '',
@@ -98,7 +226,11 @@
     if (raw) {
       try {
         const p = JSON.parse(raw);
-        if (p && Array.isArray(p.questions) && !isOldSample(p)) return makeProject(p.title, p.questions.map(BQ.normalizeQuestion), p.settings);
+        if (p && Array.isArray(p.questions) && !isOldSample(p)) {
+          const pr = makeProject(p.title, p.questions.map(BQ.normalizeQuestion), p.settings, p.images);
+          pruneImages(pr);
+          return pr;
+        }
       } catch (e) { /* fall through */ }
     }
     return sampleProject();
@@ -129,6 +261,7 @@
   function wrapSelection(el, before, after, placeholder) {
     if (!el) return;
     after = after == null ? before : after;
+    if (el.isRichField) { el.wrapSelection(before, after, placeholder); return; }
     const s = el.selectionStart, e = el.selectionEnd, v = el.value;
     const sel = v.slice(s, e) || placeholder || '';
     el.value = v.slice(0, s) + before + sel + after + v.slice(e);
@@ -137,6 +270,7 @@
     el.dispatchEvent(new Event('input', { bubbles: true }));
   }
   function insertText(el, text, selectFrom, selectTo) {
+    if (el.isRichField) { el.insertText(text, selectFrom, selectTo); return; }
     const s = el.selectionStart, e = el.selectionEnd, v = el.value;
     el.value = v.slice(0, s) + text + v.slice(e);
     el.focus();
@@ -166,7 +300,19 @@
       b('x<sub>2</sub>', 'Subscript', fmt('sub')),
       h('span', { class: 'sep' }),
       b('<span style="font-family:var(--font-mono)">{ }</span>', 'Code', fmt('code')),
-      b('∑ math', 'Math (LaTeX, Ctrl+M)', fmt('math'))
+      b('∑ math', 'Math (LaTeX, Ctrl+M)', fmt('math')),
+      h('span', { class: 'sep' }),
+      b('▦ table', 'Insert a table', () => {
+        const t = target();
+        const el = t.multiline ? t : mainField;
+        el.saveSelection();
+        tableDialog(el);
+      }),
+      b('▣ picture', 'Insert a picture (question bank only). You can also paste or drop one into any field.', () => {
+        const el = target();
+        if (el.saveSelection) el.saveSelection();
+        pickPicture((file) => insertPicture(el, file));
+      })
     ];
     if (q.type === 'FIB_PLUS') {
       kids.push(b('+ blank', 'Insert a blank, like [blank1]', () => {
@@ -182,14 +328,62 @@
     return h('div', { class: 'rt-toolbar', role: 'toolbar', 'aria-label': 'Formatting' }, kids);
   }
   document.addEventListener('focusin', (e) => {
-    if (e.target.matches && e.target.matches('.rt')) activeField = e.target;
+    const f = e.target.closest && e.target.closest('.rt');
+    if (f) activeField = f;
   });
+
+  /* Insert-table dialog: pick a size on the grid or type it. */
+  function tableDialog(fieldEl) {
+    const MAXR = 8, MAXC = 10;
+    let rows = 3, cols = 3;
+    const rIn = h('input', { type: 'number', class: 'inp', min: '1', max: '30', value: String(rows), 'aria-label': 'Rows' });
+    const cIn = h('input', { type: 'number', class: 'inp', min: '1', max: '12', value: String(cols), 'aria-label': 'Columns' });
+    const head = h('input', { type: 'checkbox', checked: true });
+    const alignSel = h('select', { 'aria-label': 'Table alignment' },
+      h('option', { value: 'left', text: 'Left' }), h('option', { value: 'center', text: 'Center' }), h('option', { value: 'right', text: 'Right' }));
+    const grid = h('div', { class: 'tpick', role: 'grid', 'aria-label': 'Table size' });
+    const label = h('p', { class: 'fineprint' });
+    const paint = () => {
+      grid.querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.r < rows && +b.dataset.c < cols));
+      label.textContent = rows + (rows === 1 ? ' row' : ' rows') + ' × ' + cols + (cols === 1 ? ' column' : ' columns') + (head.checked ? ', first row as headings' : '');
+    };
+    const insert = () => {
+      closeModal();
+      fieldEl.insertTable(Math.max(1, Math.min(30, rows)), Math.max(1, Math.min(12, cols)), head.checked, alignSel.value);
+    };
+    for (let r = 0; r < MAXR; r++) for (let c = 0; c < MAXC; c++) {
+      grid.append(h('button', {
+        type: 'button', 'data-r': String(r), 'data-c': String(c), 'aria-label': (r + 1) + ' by ' + (c + 1),
+        onmouseenter: () => { rows = r + 1; cols = c + 1; rIn.value = rows; cIn.value = cols; paint(); },
+        onfocus: () => { rows = r + 1; cols = c + 1; rIn.value = rows; cIn.value = cols; paint(); },
+        onclick: () => { rows = r + 1; cols = c + 1; insert(); }
+      }));
+    }
+    rIn.addEventListener('input', () => { rows = Math.max(1, Math.min(30, +rIn.value || 1)); paint(); });
+    cIn.addEventListener('input', () => { cols = Math.max(1, Math.min(12, +cIn.value || 1)); paint(); });
+    head.addEventListener('change', paint);
+    openModal({
+      title: 'Insert a table',
+      body: [
+        h('p', null, 'Point at the grid to choose a size, or type it. You can add and remove rows and columns later, and type straight into the cells.'),
+        grid, label,
+        h('div', { class: 'tpick-row' },
+          h('label', null, 'Rows', rIn), h('label', null, 'Columns', cIn),
+          h('label', null, head, 'First row is headings'),
+          h('label', null, 'Align', alignSel))
+      ],
+      actions: [{ label: 'Cancel', onclick: closeModal }, { label: 'Insert table', primary: true, onclick: insert }]
+    });
+    paint();
+    rIn.focus();
+    rIn.select();
+  }
   document.addEventListener('keydown', (e) => {
     const mod = e.ctrlKey || e.metaKey;
     if (mod && !e.shiftKey && (e.key === 's' || e.key === 'S')) { e.preventDefault(); saveProject(); return; }
     if (e.key === 'Escape' && $('.modal-backdrop')) { closeModal(); return; }
-    const t = e.target;
-    if (!t.matches || !t.matches('.rt')) return;
+    const t = e.target.closest && e.target.closest('.rt');
+    if (!t) return;
     if (mod && !e.shiftKey && !e.altKey) {
       const k = e.key.toLowerCase();
       const map = { b: 'bold', i: 'italic', m: 'math' };
@@ -284,11 +478,10 @@
     const body = h('div', { class: 'qbody' });
     card.append(body);
     if (!isCollapsed) {
-      const ta = h('textarea', {
-        class: 'qtext rt', rows: '2', 'aria-label': 'Question text', placeholder: placeholderFor(q.type), value: q.text,
-        oninput: (e) => {
-          q.text = e.target.value;
-          autoGrow(e.target);
+      const ta = field({
+        multiline: true, className: 'qtext', label: 'Question text', placeholder: placeholderFor(q.type), value: q.text,
+        onInput: (v) => {
+          q.text = v;
           if (q.type === 'FIB_PLUS') { BQ.syncBlanks(q); refreshBlanks(card, q); }
           touch(card, q);
         }
@@ -296,8 +489,8 @@
       body.append(h('div', null,
         h('div', { class: 'field-label' }, h('span', null, 'Question'), h('span', { class: 'hint', text: hintFor(q.type) })),
         h('div', { class: 'rt-box' }, toolbar(card, q, ta), ta)));
-      requestAnimationFrame(() => autoGrow(ta));
       body.append(typeEditor(card, q));
+      if (feedbackOn() && BQ.takesFeedback(q)) body.append(feedbackEditor(card, q));
       body.append(h('ul', { class: 'qissues', 'data-role': 'issues' }));
       body.append(h('div', { class: 'qpreview', 'data-role': 'preview', hidden: !showPreviews }));
     }
@@ -324,8 +517,9 @@
     changed();
   }
 
+  const vctx = () => ({ images: project.images });
   function updateCardMeta(card, q) {
-    const v = BQ.validate(q);
+    const v = BQ.validate(q, vctx());
     const st = card.querySelector('[data-role="status"]');
     if (v.errors.length) { st.className = 'qstatus err'; st.textContent = v.errors.length === 1 ? '1 to fix' : v.errors.length + ' to fix'; }
     else if (v.warnings.length) { st.className = 'qstatus warn'; st.textContent = 'Check'; }
@@ -365,7 +559,7 @@
     const rows = h('div', { class: 'rows' });
     const redraw = (focusIndex) => {
       rows.replaceChildren(...q.options.map((o, idx) => choiceRow(card, q, o, idx, redraw)));
-      if (focusIndex != null) { const inp = rows.querySelectorAll('input')[focusIndex]; if (inp) inp.focus(); }
+      if (focusIndex != null) { const inp = rows.querySelectorAll('.rf')[focusIndex]; if (inp) inp.focusEnd(); }
     };
     redraw();
     const add = h('button', { type: 'button', class: 'btn small ghost add-row', html: svg('plus') + ' Add choice', onclick: () => {
@@ -389,10 +583,10 @@
         touch(card, q);
       }
     });
-    const inp = h('input', {
-      type: 'text', class: 'inp rt', value: o.text, 'aria-label': 'Choice ' + BQ.letter(idx), placeholder: 'Choice ' + BQ.letter(idx),
-      oninput: (e) => { o.text = e.target.value; touch(card, q); },
-      onkeydown: (e) => {
+    const inp = field({
+      className: 'inp', value: o.text, label: 'Choice ' + BQ.letter(idx), placeholder: 'Choice ' + BQ.letter(idx),
+      onInput: (v) => { o.text = v; touch(card, q); },
+      onKeyDown: (e) => {
         if (e.key === 'Enter' && !(e.ctrlKey || e.metaKey)) {
           e.preventDefault();
           q.options.splice(idx + 1, 0, { text: '', correct: false });
@@ -404,9 +598,9 @@
           redraw(Math.max(0, idx - 1));
           touch(card, q);
         } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-          const all = card.querySelectorAll('.rows input');
+          const all = card.querySelectorAll('.rows .rf');
           const t = all[idx + (e.key === 'ArrowDown' ? 1 : -1)];
-          if (t) { e.preventDefault(); t.focus(); }
+          if (t) { e.preventDefault(); t.focusEnd(); }
         }
       }
     });
@@ -431,11 +625,10 @@
   }
 
   function essayEditor(card, q) {
-    const ta = h('textarea', {
-      class: 'sample rt', rows: '2', value: q.sample, 'aria-label': 'Sample answer', placeholder: 'Optional. An example answer for graders.',
-      oninput: (e) => { q.sample = e.target.value; autoGrow(e.target); touch(card, q); }
+    const ta = field({
+      multiline: true, className: 'sample', value: q.sample, label: 'Sample answer', placeholder: 'Optional. An example answer for graders.',
+      onInput: (v) => { q.sample = v; touch(card, q); }
     });
-    requestAnimationFrame(() => autoGrow(ta));
     return section('Sample answer', 'Optional', h('div', { class: 'rt-box' }, ta));
   }
 
@@ -443,13 +636,13 @@
     const rows = h('div', { class: 'rows' });
     const redraw = (focus) => {
       rows.replaceChildren(...q.pairs.map((p, idx) => {
-        const mk = (side, ph) => h('input', {
-          type: 'text', class: 'inp rt', value: p[side], placeholder: ph + ' ' + (idx + 1), 'aria-label': ph + ' ' + (idx + 1),
-          oninput: (e) => { p[side] = e.target.value; touch(card, q); },
-          onkeydown: (e) => {
+        const mk = (side, ph) => field({
+          className: 'inp', value: p[side], placeholder: ph + ' ' + (idx + 1), label: ph + ' ' + (idx + 1),
+          onInput: (v) => { p[side] = v; touch(card, q); },
+          onKeyDown: (e) => {
             if (e.key === 'Enter' && !(e.ctrlKey || e.metaKey)) {
               e.preventDefault();
-              if (side === 'left') { rows.querySelectorAll('input')[idx * 2 + 1].focus(); return; }
+              if (side === 'left') { rows.querySelectorAll('.rf')[idx * 2 + 1].focusEnd(); return; }
               q.pairs.splice(idx + 1, 0, { left: '', right: '' });
               redraw((idx + 1) * 2);
               touch(card, q);
@@ -459,7 +652,7 @@
         return h('div', { class: 'row pair' }, mk('left', 'Prompt'), h('span', { class: 'pair-sep', text: '→' }), mk('right', 'Match'),
           iconBtn('x', 'Remove pair ' + (idx + 1), () => { q.pairs.splice(idx, 1); redraw(); touch(card, q); }, 'row-x'));
       }));
-      if (focus != null) { const i = rows.querySelectorAll('input')[focus]; if (i) i.focus(); }
+      if (focus != null) { const i = rows.querySelectorAll('.rf')[focus]; if (i) i.focusEnd(); }
     };
     redraw();
     const add = h('button', { type: 'button', class: 'btn small ghost add-row', html: svg('plus') + ' Add pair', onclick: () => {
@@ -537,9 +730,25 @@
   }
   const decimals = (s) => { const m = /\.(\d+)/.exec(String(s)); return m ? Math.min(m[1].length, 10) : 0; };
 
+  function feedbackEditor(card, q) {
+    const mk = (key, label, ph) => {
+      const ta = field({
+        multiline: true, className: 'fb', value: q.feedback[key], label, placeholder: ph,
+        onInput: (v) => { q.feedback[key] = v; touch(card, q); }
+      });
+      return h('div', { class: 'fb-field' }, h('span', { class: 'fb-label', text: label }), h('div', { class: 'rt-box' }, ta));
+    };
+    const has = BQ.hasFeedback(q);
+    const d = h('details', { class: 'fb-box', open: has || null },
+      h('summary', null, 'Feedback for students', h('span', { class: 'hint', text: ' Shown after they answer. Question bank (.zip) only.' })),
+      mk('correct', 'If correct', 'Optional. For example: Right, because…'),
+      mk('incorrect', 'If wrong', 'Optional. For example: Review section 3.2 on…'));
+    return d;
+  }
+
   /* ----- student-view preview ----- */
   function previewHtml(q) {
-    const T = (s) => BQ.rt.toHtml(s || '', { math: 'preview' });
+    const T = (s) => BQ.rt.toHtml(s || '', { math: 'preview', image: imageUrl });
     const esc = BQ.rt.escapeHtml;
     let text = T(q.text) || '<span class="pv-empty">Question text</span>';
     if (q.type === 'FIB_PLUS') text = text.replace(/\[([A-Za-z][A-Za-z0-9_-]{0,39})\]/g, '<span class="pv-blank">$1</span>');
@@ -574,7 +783,12 @@
         break;
       }
     }
-    return '<div class="pv-label">Student view · correct answers highlighted</div><div class="pv-q">' + text + '</div>' + body;
+    let fb = '';
+    if (feedbackOn() && BQ.hasFeedback(q)) {
+      const row = (cls, label, v) => (BQ.rt.toPlain(v).trim() ? '<div class="pv-fb ' + cls + '"><span class="pv-fb-label">' + label + '</span> ' + T(v) + '</div>' : '');
+      fb = row('ok', 'If correct:', q.feedback.correct) + row('no', 'If wrong:', q.feedback.incorrect);
+    }
+    return '<div class="pv-label">Student view · correct answers highlighted</div><div class="pv-q">' + text + '</div>' + body + fb;
   }
 
   /* ----- list operations ----- */
@@ -647,7 +861,7 @@
     if (v === 'text') {
       const ta = $('#plain');
       if (textStale) {
-        ta.value = BQ.plain.serialize(project.questions);
+        ta.value = BQ.plain.serialize(project.questions, { feedback: feedbackOn() });
         textStale = false;
         lastParse = BQ.plain.parse(ta.value);
       }
@@ -662,10 +876,17 @@
     const ta = $('#plain');
     const res = BQ.plain.parse(ta.value);
     if (res.convertedFromBb) {
-      ta.value = BQ.plain.serialize(res.questions);
+      ta.value = BQ.plain.serialize(res.questions, { feedback: feedbackOn() });
       lastParse = BQ.plain.parse(ta.value);
       toast('Converted Blackboard rows into text format.');
     } else lastParse = res;
+    if (!feedbackOn()) {
+      // Feedback is hidden in Text mode while switched off; keep what each question already had.
+      lastParse.questions.forEach((q, i) => {
+        const old = project.questions[i];
+        if (old && old.feedback && !q.feedback.correct && !q.feedback.incorrect) q.feedback = { correct: old.feedback.correct, incorrect: old.feedback.incorrect };
+      });
+    }
     project.questions = lastParse.questions;
     formStale = true;
     changed('text');
@@ -678,7 +899,7 @@
     const items = [];
     lastParse.issues.forEach(is => items.push({ line: is.line, level: is.level === 'error' ? 'err' : is.level === 'info' ? 'info' : 'warn', text: is.message }));
     lastParse.questions.forEach((q, i) => {
-      const v = BQ.validate(q);
+      const v = BQ.validate(q, vctx());
       v.errors.forEach(m => items.push({ line: lastParse.lines[i], level: 'err', text: 'Q' + (i + 1) + ' (' + BQ.TYPE_LABEL[q.type] + '): ' + m }));
     });
     items.sort((a, b) => a.line - b.line);
@@ -707,7 +928,7 @@
   /* ---------- check & export panel ---------- */
   function updatePanel() {
     const qs = project.questions;
-    const vals = qs.map(q => BQ.validate(q));
+    const vals = qs.map(q => BQ.validate(q, vctx()));
     const bad = vals.filter(v => v.errors.length).length;
     const ready = qs.length - bad;
     const line = $('#sum-line');
@@ -725,6 +946,12 @@
     });
     if (qs.length > BQ.bb.MAX_PER_FILE) {
       items.unshift(h('li', { class: 'warn' }, h('button', { type: 'button' }, 'More than ' + BQ.bb.MAX_PER_FILE + ' questions: the download is split into several files, because Blackboard recommends at most ' + BQ.bb.MAX_PER_FILE + ' per upload.')));
+    }
+    const extra = (q) => (feedbackOn() && BQ.hasFeedback(q)) || BQ.imagesInQuestion(q).length;
+    const extras = qs.filter(extra).length;
+    if (extras) {
+      items.push(h('li', { class: 'info' }, h('button', { type: 'button', onclick: () => goTo(qs.findIndex(extra)) },
+        (extras === 1 ? '1 question has' : extras + ' questions have') + ' feedback or pictures. They are included in the question bank (.zip); the .txt upload leaves them out (a picture becomes its description).')));
     }
     if (items.length) list.replaceChildren(...items);
     else list.replaceChildren(qs.length ? h('li', null, h('p', { class: 'all-good', text: 'No problems found.' })) : '');
@@ -812,7 +1039,7 @@
   }
 
   function doDownloadPool(includeInvalid) {
-    const ex = BQ.pool.exportPool(project.questions, project.settings, { includeInvalid, title: project.title || fileBase() });
+    const ex = BQ.pool.exportPool(project.questions, project.settings, { includeInvalid, title: project.title || fileBase(), images: project.images });
     if (ex.skipped.length && !includeInvalid) {
       openModal({
         title: ex.skipped.length === 1 ? '1 question needs fixing' : ex.skipped.length + ' questions need fixing',
@@ -832,7 +1059,10 @@
   function savePool(ex) {
     const name = fileBase() + '.zip';
     download(name, ex.bytes, 'application/zip');
-    toast('Downloaded ' + name + ' with ' + ex.included + (ex.included === 1 ? ' question.' : ' questions.') + ' Import it in Question banks without unzipping.');
+    const extra = [];
+    if (ex.pictures.length) extra.push(ex.pictures.length + (ex.pictures.length === 1 ? ' picture' : ' pictures'));
+    if (ex.feedback) extra.push('feedback on ' + ex.feedback + (ex.feedback === 1 ? ' question' : ' questions'));
+    toast('Downloaded ' + name + ' with ' + ex.included + (ex.included === 1 ? ' question' : ' questions') + (extra.length ? ' (' + extra.join(', ') + ')' : '') + '. Import it in Question banks without unzipping.');
   }
 
   async function copyTxt() {
@@ -883,6 +1113,7 @@
 
   /* ---------- project files & import ---------- */
   function saveProject() {
+    pruneImages(project);
     const data = { app: 'blackboard-question-editor', version: 1, savedAt: new Date().toISOString(), project };
     const name = fileBase() + '.bbq.json';
     download(name, JSON.stringify(data, null, 2), 'application/json');
@@ -890,7 +1121,7 @@
   }
 
   function loadProject(p) {
-    project = makeProject(p.title, (p.questions || []).map(BQ.normalizeQuestion), p.settings);
+    project = makeProject(p.title, (p.questions || []).map(BQ.normalizeQuestion), p.settings, p.images);
     collapsed.clear();
     applyProjectToUi();
     changed();
@@ -900,6 +1131,7 @@
     $('#set-title').value = project.title;
     $('#fmt-' + (project.settings.format === 'plain' ? 'plain' : 'html')).checked = true;
     $('#math-' + (['unicode', 'mathml', 'latex'].includes(project.settings.math) ? project.settings.math : 'unicode')).checked = true;
+    $('#opt-feedback').checked = feedbackOn();
     $('#file-name').value = fileBase();
     textStale = true;
     if (view === 'text') setView('text'); else renderList();
@@ -1088,7 +1320,10 @@
         h('h3', null, 'Good to know'),
         h('ul', null,
           h('li', null, 'Blackboard skips any question with an error and uploads the rest. This editor flags those problems before you download.'),
-          h('li', null, 'Points, feedback and images can’t be set in an upload file. Add them in Blackboard afterwards.'),
+          h('li', null, 'Feedback and pictures go into the question bank (.zip) only, because the .txt upload format has no place for them. Points can’t be set in either file; the bank gives each question 1 point.'),
+          h('li', null, 'Pictures: use ▣ picture, or paste or drop an image into any field. Click a picture to change its description, size or alignment.'),
+          h('li', null, 'Tables: use ▦ table and pick a size, then type into the cells. Tab moves to the next cell; the table’s own buttons add or remove rows and columns and align the table left, center or right. In Text mode a table is written as rows like | a | b |, with an optional {table align=center} line above it.'),
+          h('li', null, 'Don’t want feedback? Untick Feedback above the questions. The feedback fields disappear and the question bank leaves feedback out; anything already written is kept for when you switch it back on.'),
           h('li', null, 'Blackboard recommends at most 250 questions per file; larger sets download as several files.'),
           h('li', null, 'Open project opens a project you saved earlier. Import questions reads Blackboard .txt files (to edit an old upload), CSV or Excel sheets in the same layout, and plain-text quizzes. You can also drop any of these files onto the page.'),
           h('li', null, 'Your work is saved in this browser automatically. Use Save project to keep a copy, move to another computer, or share with a colleague.')),
@@ -1247,6 +1482,16 @@
     $('#tab-form').addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') { setView('text'); $('#tab-text').focus(); } });
     $('#tab-text').addEventListener('keydown', (e) => { if (e.key === 'ArrowLeft') { setView('form'); $('#tab-form').focus(); } });
     $('#plain').addEventListener('input', onTextInput);
+    $('#opt-feedback').addEventListener('change', (e) => {
+      project.settings.feedback = e.target.checked;
+      textStale = true;
+      if (view === 'text') { formStale = true; setView('text'); } else renderList();
+      changed('settings');
+      const n = project.questions.filter(q => BQ.hasFeedback(q)).length;
+      toast(e.target.checked
+        ? 'Feedback is on' + (n ? ' (' + n + (n === 1 ? ' question has it).' : ' questions have it).') : '.')
+        : 'Feedback is off: hidden here and left out of the question bank.' + (n ? ' What you wrote is kept.' : ''));
+    });
     $('#opt-previews').addEventListener('change', (e) => {
       showPreviews = e.target.checked;
       document.querySelectorAll('[data-role="preview"]').forEach(pv => {
@@ -1317,11 +1562,39 @@
     $('#btn-testfile').addEventListener('click', testFile);
     $('#raw-details').addEventListener('toggle', (e) => { if (e.target.open) renderRaw(); });
 
-    // drop a file anywhere to open it
+    $('#picture-input').addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      e.target.value = '';
+      const fn = pictureCallback;
+      pictureCallback = null;
+      if (f && fn) fn(f);
+    });
+    // paste a screenshot or copied picture into a field
+    document.addEventListener('paste', (e) => {
+      if (e.defaultPrevented) return;
+      const field = pictureTarget(e.target);
+      const files = field ? imageFiles(e.clipboardData) : [];
+      if (!files.length) return;
+      e.preventDefault();
+      insertPicture(field, files[0]);
+    });
+
+    // drop a picture onto a field to insert it; drop any other file anywhere to open it
     document.addEventListener('dragover', (e) => { if (e.dataTransfer && Array.from(e.dataTransfer.types).includes('Files')) e.preventDefault(); });
     document.addEventListener('drop', (e) => {
       if (!e.dataTransfer || !e.dataTransfer.files.length) return;
       e.preventDefault();
+      const pics = imageFiles(e.dataTransfer);
+      if (pics.length) {
+        const field = pictureTarget(e.target);
+        if (field) {
+          field.focus();
+          if (field.caretFromPoint) field.caretFromPoint(e.clientX, e.clientY);
+          insertPicture(field, pics[0]);
+        }
+        else toast('Drop the picture onto a question, choice or feedback field.');
+        return;
+      }
       openFile(e.dataTransfer.files[0]);
     });
 

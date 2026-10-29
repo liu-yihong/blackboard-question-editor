@@ -32,7 +32,8 @@
     return {
       id: uid(), type: CODES.has(type) ? type : 'MC', text: '',
       options: [], tf: null, sample: '', pairs: [], answers: [], blanks: [],
-      num: { answer: '', tolerance: '' }
+      num: { answer: '', tolerance: '' },
+      feedback: { correct: '', incorrect: '' }
     };
   }
 
@@ -58,6 +59,7 @@
     q.answers = Array.isArray(raw.answers) ? raw.answers.map(str) : [];
     q.blanks = Array.isArray(raw.blanks) ? raw.blanks.map(b => ({ name: str(b && b.name), answers: Array.isArray(b && b.answers) ? b.answers.map(str) : [] })) : [];
     q.num = { answer: str(raw.num && raw.num.answer), tolerance: str(raw.num && raw.num.tolerance) };
+    q.feedback = { correct: str(raw.feedback && raw.feedback.correct), incorrect: str(raw.feedback && raw.feedback.incorrect) };
     return q;
   }
 
@@ -103,12 +105,38 @@
   const filled = (s) => BQ.rt.toPlain(s || '').trim() !== '';
   const letter = (i) => (i < 26 ? String.fromCharCode(65 + i) : String(i + 1));
 
-  /** Returns { errors: [...], warnings: [...] } in plain language. */
-  function validate(q) {
+  /** Every field of a question that can hold formatted text (and so pictures). */
+  function richFields(q) {
+    const out = [q.text];
+    if (q.type === 'MC' || q.type === 'MA') q.options.forEach(o => out.push(o.text));
+    if (q.type === 'MAT') q.pairs.forEach(p => out.push(p.left, p.right));
+    if (q.type === 'ESS') out.push(q.sample);
+    if (hasFeedback(q)) out.push(q.feedback.correct, q.feedback.incorrect);
+    return out;
+  }
+  /** Essays are graded by hand, so Blackboard shows them no correct/incorrect feedback. */
+  const takesFeedback = (q) => q.type !== 'ESS';
+  const hasFeedback = (q) => takesFeedback(q) && !!(q.feedback && (filled(q.feedback.correct) || filled(q.feedback.incorrect)));
+  /** Project pictures used anywhere in a question. */
+  function imagesInQuestion(q) {
+    const names = [];
+    richFields(q).forEach(f => BQ.rt.imagesIn(f).forEach(n => { if (!names.includes(n)) names.push(n); }));
+    return names;
+  }
+
+  /**
+   * Returns { errors: [...], warnings: [...] } in plain language.
+   * ctx.images (optional): the project's picture store, to catch pictures that are missing.
+   */
+  function validate(q, ctx) {
     const errors = [];
     const warnings = [];
-    if (!filled(q.text)) errors.push('Write the question text.');
-    if (/<img\b/i.test(q.text)) warnings.push('Blackboard file upload does not bring in images. Add the image in Blackboard after uploading.');
+    if (!filled(q.text) && !imagesInQuestion(q).length) errors.push('Write the question text.');
+    if (ctx && ctx.images) {
+      imagesInQuestion(q).forEach(n => {
+        if (!Object.prototype.hasOwnProperty.call(ctx.images, n)) warnings.push('The picture “' + n + '” is not in this project. Insert it again with the Picture button, or it will show as text.');
+      });
+    }
 
     switch (q.type) {
       case 'MC':
@@ -200,6 +228,9 @@
   BQ.syncBlanks = syncBlanks;
   BQ.isNumber = isNumber;
   BQ.validate = validate;
+  BQ.takesFeedback = takesFeedback;
+  BQ.hasFeedback = hasFeedback;
+  BQ.imagesInQuestion = imagesInQuestion;
   BQ.changeType = changeType;
   BQ.letter = letter;
 })();

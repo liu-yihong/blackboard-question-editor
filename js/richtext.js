@@ -54,22 +54,104 @@
     });
   }
 
-  function sanitizeTag(close, name, attrStr) {
+  /* Block-level tags: line breaks typed next to them are layout, not <br>. */
+  const BLOCK_TAGS = new Set(['table', 'thead', 'tbody', 'tr', 'td', 'th', 'ul', 'ol', 'li', 'p', 'div', 'blockquote', 'pre', 'hr']);
+
+  /* A picture stored in the project is referenced by its file name: <img src="graph.png">. */
+  const LOCAL_IMG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}\.(png|jpe?g|gif|webp|svg)$/i;
+  const isLocalImage = (src) => LOCAL_IMG_RE.test(String(src || '').trim());
+
+  /** Attributes of a tag as a lower-cased map. */
+  function readAttrs(attrStr) {
+    const out = {};
+    (attrStr || '').replace(ATTR_RE, (a, k, v) => { out[k.toLowerCase()] = v == null ? '' : v.replace(/^["']|["']$/g, ''); return ''; });
+    return out;
+  }
+  /** Names of project pictures used in a piece of markup. */
+  function imagesIn(src) {
+    const names = [];
+    String(src || '').replace(TAG_RE, (m, close, name, attrs) => {
+      if (!close && name.toLowerCase() === 'img') {
+        const s = (readAttrs(attrs).src || '').trim();
+        if (isLocalImage(s) && !names.includes(s)) names.push(s);
+      }
+      return m;
+    });
+    return names;
+  }
+
+  /**
+   * opts.image(name) resolves a project picture's file name to the address to write
+   * (a blob URL for previews, Blackboard's embedded-file reference for the .zip).
+   * Returning null leaves the picture out and writes its description instead.
+   */
+  function sanitizeTag(close, name, attrStr, opts) {
     const n = name.toLowerCase();
     const isMath = MATH_TAGS.has(n);
     if (!ALLOWED_TAGS.has(n) && !isMath) return null;
     if (close) return '</' + n + '>';
+    const attrs = readAttrs(attrStr);
+    if (n === 'img' && isLocalImage(attrs.src) && opts && typeof opts.image === 'function') {
+      const url = opts.image(attrs.src.trim());
+      if (url == null) return escapeHtml(pictureLabel(attrs.alt));
+      attrs.src = url;
+      attrs.__trusted = true;
+    }
     let out = '<' + n;
     const allowed = isMath ? MATH_ATTRS : new Set(SAFE_ATTRS[n] || []);
-    (attrStr || '').replace(ATTR_RE, (a, k, v) => {
-      k = k.toLowerCase();
-      if (!allowed.has(k)) return '';
-      let val = v == null ? '' : v.replace(/^["']|["']$/g, '');
-      if ((k === 'href' || k === 'src') && !/^(https?:|mailto:)/i.test(val.trim())) return '';
+    for (const k in attrs) {
+      if (!allowed.has(k)) continue;
+      const val = attrs[k];
+      if (k === 'href' && !/^(https?:|mailto:)/i.test(val.trim())) continue;
+      if (k === 'src' && !attrs.__trusted && !/^https?:/i.test(val.trim()) && !isLocalImage(val)) continue;
+      if (k === 'width' && !/^\d{1,4}$/.test(val.trim())) continue;
       out += ' ' + k + '="' + val.replace(/"/g, '&quot;') + '"';
-      return '';
-    });
+    }
+    // align="left|center|right" on a picture: its own line, aligned (written as inline style for Blackboard)
+    if (n === 'img' && IMG_ALIGN[attrs.align]) out += ' style="' + IMG_ALIGN[attrs.align] + '"';
     return out + '>';
+  }
+  const IMG_ALIGN = {
+    left: 'display:block;margin:6px auto 6px 0;max-width:100%;height:auto',
+    center: 'display:block;margin:6px auto;max-width:100%;height:auto',
+    right: 'display:block;margin:6px 0 6px auto;max-width:100%;height:auto'
+  };
+  const pictureLabel = (alt) => '[Picture' + (alt && alt.trim() ? ': ' + alt.trim() : '') + ']';
+
+  /* ---------- simple tables:  | a | b |  ---------- */
+  const TABLE_LINE = /^\s*\|.*\|\s*$/;
+  const TABLE_RULE = /^\s*\|?(\s*:?-{2,}:?\s*\|)+\s*:?-{0,}:?\s*\|?\s*$/;
+  /* Optional line just above a table:  {table align=center}  (left is the default). */
+  const TABLE_ALIGN_LINE = /^\s*\{table\s+align\s*=\s*(left|center|right)\s*\}\s*$/i;
+  const TABLE_MARGIN = { left: '', center: ';margin-left:auto;margin-right:auto', right: ';margin-left:auto;margin-right:0' };
+  function tableCells(line) {
+    return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+  }
+  /** Replace runs of |-delimited lines with table markup (tags are emitted as tokens). */
+  function pipeTables(s, put, html) {
+    const lines = s.split('\n');
+    const out = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (!TABLE_LINE.test(lines[i]) || !(i + 1 < lines.length && TABLE_LINE.test(lines[i + 1]))) { out.push(lines[i]); continue; }
+      let j = i;
+      while (j < lines.length && TABLE_LINE.test(lines[j])) j++;
+      const rows = lines.slice(i, j);
+      const hasHead = rows.length > 1 && TABLE_RULE.test(rows[1]);
+      const body = rows.filter((r, k) => !(hasHead && k === 1)).map(tableCells);
+      let align = 'left';
+      const am = out.length ? TABLE_ALIGN_LINE.exec(out[out.length - 1]) : null;
+      if (am) { align = am[1].toLowerCase(); out.pop(); }
+      if (!html) {
+        out.push(body.map(r => r.join(' | ')).join('\n'));
+      } else {
+        const cell = (tag, c) => put('<' + tag + ' style="border:1px solid #999;padding:4px 8px;text-align:left">') + (c.trim() ? c : put('&nbsp;')) + put('</' + tag + '>');
+        out.push(put('<table border="1" cellpadding="4" style="border-collapse:collapse' + TABLE_MARGIN[align] + '">') +
+          body.map((r, k) => put('<tr>') + r.map(c => cell(hasHead && k === 0 ? 'th' : 'td', c)).join('') + put('</tr>')).join('') +
+          put('</table>'));
+      }
+      i = j - 1;
+    }
+    return out.join('\n');
   }
 
   /* ---------- LaTeX → Unicode text (used for "Unicode" math export and as a preview fallback) ---------- */
@@ -244,7 +326,9 @@
     const html = opts.target !== 'plain';
     const mathMode = opts.math || 'unicode';
     const toks = [];
+    const blocks = new Set();
     const put = (x) => '' + (toks.push(x) - 1) + '';
+    const putBlock = (x) => { const t = put(x); blocks.add(toks.length - 1); return t; };
     let s = String(src == null ? '' : src).replace(/[]/g, '').replace(/\r\n?/g, '\n');
 
     // 1. code spans: content is literal
@@ -253,14 +337,16 @@
     s = extractMath(s, put, (tex, display) => renderMath(tex, display, mathMode, html));
     // 3. backslash escapes
     s = s.replace(/\\([\\*_$^~`\[\]=;|<&#])/g, (m, c) => put(html ? (c === '<' ? '&lt;' : c === '&' ? '&amp;' : c) : c));
-    // 4. HTML tags
+    // 4. simple | tables |, then HTML tags
+    s = pipeTables(s, (x) => (/^<\/?(table|tr|td|th)\b/.test(x) ? putBlock(x) : put(x)), html);
     s = s.replace(TAG_RE, (m, close, name, attrs) => {
-      if (html) {
-        const t = sanitizeTag(close, name, attrs);
-        return t === null ? m : put(t);
-      }
       const n = name.toLowerCase();
+      if (html) {
+        const t = sanitizeTag(close, name, attrs, opts);
+        return t === null ? m : BLOCK_TAGS.has(n) ? putBlock(t) : put(t);
+      }
       if (!ALLOWED_TAGS.has(n) && !MATH_TAGS.has(n)) return m;
+      if (n === 'img' && !close) return put(pictureLabel(readAttrs(attrs).alt));
       return /^(br|p|div|li|tr|hr|td|th)$/.test(n) ? put(' ') : '';
     });
     if (html) s = escapeMinimal(s);
@@ -272,7 +358,11 @@
     s = s.replace(/(^|[^\\\w])_(?=[^\s_])([^\s_])_(?=$|\W)/g, (m, pre, x) => pre + (html ? '<em>' + x + '</em>' : x));
     s = s.replace(/\^(?=\S)([^\s^]+?)\^/g, (m, x) => (html ? '<sup>' + x + '</sup>' : scriptText(x, true)));
     s = s.replace(/~(?=\S)([^\s~]+?)~/g, (m, x) => (html ? '<sub>' + x + '</sub>' : scriptText(x, false)));
-    // 6. line breaks
+    // 6. line breaks (none next to block tags such as tables and lists)
+    if (html && blocks.size) {
+      s = s.replace(/[ \t]*\n[ \t]*(?=(\d+))/g, (m, n) => (blocks.has(+n) ? '' : m));
+      s = s.replace(/(\d+)[ \t]*\n/g, (m, n) => (blocks.has(+n) ? m.slice(0, m.indexOf('') + 1) : m));
+    }
     s = html ? s.replace(/\n/g, '<br>') : s.replace(/\s*\n\s*/g, ' ');
     // 7. restore tokens (they may nest)
     for (let guard = 0; guard < 5 && //.test(s); guard++) {
@@ -323,5 +413,5 @@
     return t.length > max ? t.slice(0, max - 1) + '…' : t;
   }
 
-  BQ.rt = { toHtml, toPlain, htmlToMarkup, texToUnicode, summary, escapeHtml, decodeEntities, ESCAPABLE };
+  BQ.rt = { toHtml, toPlain, htmlToMarkup, texToUnicode, summary, escapeHtml, decodeEntities, imagesIn, isLocalImage, ESCAPABLE };
 })();

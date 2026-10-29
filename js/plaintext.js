@@ -8,6 +8,10 @@
  *
  *   2. [TF] Prokaryotes have a nucleus.
  *   Answer: False
+ *   Correct feedback: Right, prokaryotes have no nucleus.   ← shown after answering
+ *   Incorrect feedback: Prokaryotes keep their DNA in a nucleoid.
+ *
+ * Feedback goes into the question bank (.zip) only; the .txt upload format has no place for it.
  *
  * The question type is detected from the content; put a tag such as [ESS], [MAT],
  * [FIB], [FMB] or [NUM] right after the number to choose it yourself. "Type: E" lines
@@ -32,6 +36,8 @@
   const RE_TOL = /^(?:tolerance|tol|plus\s*or\s*minus)\s*:\s*(.*)$/i;
   const RE_SAMPLE = /^(?:sample(?:\s+answer)?|example(?:\s+answer)?|model\s+answer|feedback)\s*:\s*(.*)$/i;
   const RE_IGNORED = /^(?:title|points?|pts|score)\s*:/i;
+  const RE_FEEDBACK = /^(?:(correct|right|incorrect|wrong)\s+feedback|feedback\s+(?:if|when)\s+(correct|right|incorrect|wrong)|if\s+(correct|right|incorrect|wrong))\s*:\s*(.*)$/i;
+  const fbKey = (m) => (/^(correct|right)$/i.test(m[1] || m[2] || m[3]) ? 'correct' : 'incorrect');
   const RE_BLANK_LINE = /^([A-Za-z][A-Za-z0-9_-]{0,39})\s*:\s*(.*)$/;
   const RE_TAG = /^\[([A-Za-z/+_]{1,9})\]\s*/;
 
@@ -138,6 +144,7 @@
         break;
       }
     }
+    q.feedback = { correct: d.feedback.correct.replace(/\s+$/, ''), incorrect: d.feedback.incorrect.replace(/\s+$/, '') };
     return q;
   }
 
@@ -201,7 +208,7 @@
         pendingType = null;
         const tm = RE_TAG.exec(body);
         if (tm && mapTag(tm[1])) { forced = mapTag(tm[1]); body = body.slice(tm[0].length); }
-        d = { line: ln, text: body, options: [], answer: null, tolerance: null, sample: null, blanks: {}, forced };
+        d = { line: ln, text: body, options: [], answer: null, tolerance: null, sample: null, blanks: {}, feedback: { correct: '', incorrect: '' }, forced };
         target = { obj: d, key: 'text' };
         return;
       }
@@ -218,6 +225,7 @@
         target = { obj: opt, key: 'text' };
         return;
       }
+      if ((m = RE_FEEDBACK.exec(t))) { const k = fbKey(m); d.feedback[k] = m[4]; target = { obj: d.feedback, key: k }; return; }
       if ((m = RE_ANSWER.exec(t))) { d.answer = m[1]; target = { obj: d, key: 'answer' }; return; }
       if ((m = RE_TOL.exec(t))) { d.tolerance = m[1]; target = null; return; }
       if ((m = RE_SAMPLE.exec(t))) { d.sample = m[1]; target = { obj: d, key: 'sample' }; return; }
@@ -243,7 +251,7 @@
   function escapeLine(line) {
     const t = line.trimStart();
     if (RE_QUESTION.test(t) || RE_OPTION.test(t) || RE_OPTION_STAR_AFTER.test(t) || RE_ANSWER.test(t) || RE_TOL.test(t) ||
-        RE_SAMPLE.test(t) || RE_TYPE.test(t) || RE_BLANK_LINE.test(t) || /^(#|\/\/)/.test(t)) return '\\' + t;
+        RE_SAMPLE.test(t) || RE_FEEDBACK.test(t) || RE_TYPE.test(t) || RE_BLANK_LINE.test(t) || /^(#|\/\/)/.test(t)) return '\\' + t;
     return line;
   }
   function multiline(first, rest) {
@@ -252,7 +260,7 @@
   }
   const joinList = (arr) => arr.map(a => String(a).replace(/;/g, '\\;').trim()).filter(Boolean).join('; ');
 
-  function block(q, n, tag) {
+  function block(q, n, tag, opts) {
     const out = [multiline(n + '. ' + (tag ? '[' + tag + '] ' : ''), q.text)];
     const L = (i) => (i < 26 ? String.fromCharCode(97 + i) : 'z');
     switch (q.type) {
@@ -283,14 +291,19 @@
         if (String(q.num.tolerance).trim()) out.push('Tolerance: ' + String(q.num.tolerance).trim());
         break;
     }
+    if (!(opts && opts.feedback === false) && BQ.takesFeedback(q) && q.feedback) {
+      if (q.feedback.correct.trim()) out.push(multiline('Correct feedback: ', q.feedback.correct));
+      if (q.feedback.incorrect.trim()) out.push(multiline('Incorrect feedback: ', q.feedback.incorrect));
+    }
     return out.join('\n');
   }
 
-  function serialize(questions) {
+  /** opts.feedback === false leaves out feedback lines (Feedback switched off). */
+  function serialize(questions, opts) {
     return questions.map((q, i) => {
-      let b = block(q, i + 1, null);
+      let b = block(q, i + 1, null, opts);
       const back = parse(b).questions[0];
-      if (!back || back.type !== q.type) b = block(q, i + 1, SERIAL_TAG[q.type]);
+      if (!back || back.type !== q.type) b = block(q, i + 1, SERIAL_TAG[q.type], opts);
       return b;
     }).join('\n\n') + (questions.length ? '\n' : '');
   }

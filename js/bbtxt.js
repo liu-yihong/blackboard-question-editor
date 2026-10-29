@@ -182,7 +182,8 @@
     const math = (settings && settings.math) || 'unicode';
     const clean = (s) => String(s).replace(/\t/g, ' ').replace(/\r?\n/g, html ? '<br>' : ' ').trim();
     return {
-      rich: (s) => clean(html ? BQ.rt.toHtml(s, { math }) : BQ.rt.toPlain(s, { math })),
+      // Pictures stored in the project can't travel in a .txt file; their description is written instead.
+      rich: (s) => clean(html ? BQ.rt.toHtml(s, { math, image: () => null }) : BQ.rt.toPlain(s, { math })),
       plain: (s) => clean(BQ.rt.toPlain(s, { math: 'unicode' }))
     };
   }

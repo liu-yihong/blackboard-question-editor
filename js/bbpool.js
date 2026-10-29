@@ -6,8 +6,13 @@
  *   .bb-package-info   one line: cx.package.info.version=6.0
  *   imsmanifest.xml    one resource of type assessment/x-bb-qti-pool
  *   res00001.dat       the pool, in Blackboard's QTI 1.2 dialect
+ *   csfiles/home_dir/  pictures used in the questions, named  name__xid-N_1.ext
  * Item layouts follow real Learn exports (Moodle's and senkyoshi's Blackboard
  * import fixtures, and R/exams' exams2blackboard).
+ *
+ * Pictures: Learn exports keep embedded files in csfiles/home_dir and refer to
+ * them from the question HTML as @X@EmbeddedFile.requestUrlStub@X@bbcswebdav/xid-N_1;
+ * Blackboard swaps in the real address when it imports the package.
  */
 (function () {
   'use strict';
@@ -30,12 +35,32 @@
     return Array.from(b, x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
   }
 
-  function makeFormatter(settings) {
+  /**
+   * images: the project's picture store { name: { type, data(base64) } }.
+   * Pictures are always written as HTML, even when Formatting is set to plain text,
+   * because a picture can't be expressed any other way.
+   */
+  function makeFormatter(settings, images) {
     const html = (settings && settings.format) !== 'plain';
     const math = (settings && settings.math) || 'unicode';
+    const used = new Map(); // name → xid
+    const image = (name) => {
+      if (!images || !Object.prototype.hasOwnProperty.call(images, name)) return null;
+      if (!used.has(name)) used.set(name, 'xid-' + (900000000 + used.size * 7919 + Math.floor(Math.random() * 7000)) + '_1');
+      return '@X@EmbeddedFile.requestUrlStub@X@bbcswebdav/' + used.get(name);
+    };
     return {
+      used,
+      /** Settings → Feedback off: write the feedback blocks empty. */
+      feedback: !settings || settings.feedback !== false,
       /** HTML for a mat_formattedtext block. */
-      rich: (s) => (html ? BQ.rt.toHtml(s, { math }) : BQ.rt.escapeHtml(BQ.rt.toPlain(s, { math }))).trim(),
+      rich: (s) => {
+        if (html) return BQ.rt.toHtml(s, { math, image }).trim();
+        if (!BQ.rt.imagesIn(s).length) return BQ.rt.escapeHtml(BQ.rt.toPlain(s, { math })).trim();
+        // plain text, but keep the pictures
+        return String(s).split(/(<img\b[^>]*>)/i).map(part => (/^<img\b/i.test(part)
+          ? BQ.rt.toHtml(part, { math, image }) : BQ.rt.escapeHtml(BQ.rt.toPlain(part, { math })))).join(' ').trim();
+      },
       /** Plain text for answers the student types. */
       plain: (s) => BQ.rt.toPlain(s, { math: 'unicode' }).replace(/\s+/g, ' ').trim()
     };
@@ -56,8 +81,12 @@
     '<respcondition title="incorrect"><conditionvar><other/></conditionvar>' +
     '<setvar action="Set" variablename="SCORE">0.0</setvar>' +
     '<displayfeedback feedbacktype="Response" linkrefid="incorrect"/></respcondition>';
-  const EMPTY_FEEDBACK = ['correct', 'incorrect'].map(id =>
-    '<itemfeedback ident="' + id + '" view="All"><flow_mat class="Block">' + formatted('flow_mat', '') + '</flow_mat></itemfeedback>').join('');
+  /** The correct / incorrect feedback blocks every Learn item carries (empty when there is none). */
+  const feedbackBlocks = (q, F) => ['correct', 'incorrect'].map(id => {
+    const text = F.feedback && BQ.takesFeedback(q) && q.feedback ? q.feedback[id] : '';
+    return '<itemfeedback ident="' + id + '" view="All"><flow_mat class="Block">' +
+      formatted('flow_mat', BQ.rt.toPlain(text || '').trim() || BQ.rt.imagesIn(text).length ? F.rich(text) : '') + '</flow_mat></itemfeedback>';
+  }).join('');
 
   /* ---------- one question → one <item> ---------- */
 
@@ -178,7 +207,7 @@
       '<presentation><flow class="Block"><flow class="QUESTION_BLOCK">' + formatted('flow', F.rich(q.text)) + '</flow>' +
       '<flow class="RESPONSE_BLOCK">' + response + '</flow>' + extraBlocks + '</flow></presentation>' +
       '<resprocessing scoremodel="SumOfScores"><outcomes><decvar defaultval="0.0" maxvalue="' + pts + '" minvalue="0.0" varname="SCORE" vartype="Decimal"/></outcomes>' +
-      conditions + INCORRECT + '</resprocessing>' + EMPTY_FEEDBACK + extraFeedback + '</item>';
+      conditions + INCORRECT + '</resprocessing>' + feedbackBlocks(q, F) + extraFeedback + '</item>';
   }
 
   /* ---------- the pool file ---------- */
@@ -274,30 +303,52 @@
     return out;
   }
 
+  const b64ToBytes = (b64) => {
+    const bin = atob(String(b64 || ''));
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  };
+  const EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg' };
+
+  /** csfiles/home_dir/<name>__xid-N_1.<ext>, the way Learn names embedded files. */
+  function pictureFiles(used, images) {
+    return Array.from(used, ([name, xid]) => {
+      const img = images[name];
+      const dot = name.lastIndexOf('.');
+      const base = (dot > 0 ? name.slice(0, dot) : name).replace(/[^A-Za-z0-9_-]+/g, '-') || 'picture';
+      const ext = (dot > 0 ? name.slice(dot + 1) : '') || EXT[img.type] || 'png';
+      return { name: 'csfiles/home_dir/' + base + '__' + xid + '.' + ext.toLowerCase(), bytes: b64ToBytes(img.data) };
+    });
+  }
+
   /**
    * Build the pool package.
-   * opts: { title, points (default 1), includeInvalid }
-   * Returns { bytes: Uint8Array, xml, included, skipped: [{index, errors}] }
+   * opts: { title, points (default 1), includeInvalid, images }
+   * Returns { bytes: Uint8Array, xml, included, skipped: [{index, errors}], pictures, feedback }
    */
   function exportPool(questions, settings, opts) {
     opts = opts || {};
-    const F = makeFormatter(settings);
+    const images = opts.images || {};
+    const F = makeFormatter(settings, images);
     const points = opts.points > 0 ? Number(opts.points) : 1;
     const title = String(opts.title || '').trim() || 'Question bank';
     const items = [];
     const skipped = [];
     questions.forEach((q, index) => {
-      const v = BQ.validate(q);
+      const v = BQ.validate(q, { images });
       if (v.errors.length && !opts.includeInvalid) { skipped.push({ index, errors: v.errors }); return; }
       items.push(item(q, F, points));
     });
     const dat = poolXml(title, items);
+    const pictures = pictureFiles(F.used, images);
     const bytes = zip([
       { name: '.bb-package-info', text: 'cx.package.info.version=6.0\n' },
       { name: 'imsmanifest.xml', text: manifestXml(title) },
       { name: 'res00001.dat', text: dat }
-    ]);
-    return { bytes, xml: dat, included: items.length, skipped };
+    ].concat(pictures));
+    const feedback = F.feedback ? questions.filter(q => BQ.hasFeedback(q)).length : 0;
+    return { bytes, xml: dat, included: items.length, skipped, pictures: pictures.map(p => p.name), feedback };
   }
 
   BQ.pool = { exportPool, zip, crc32 };
