@@ -183,14 +183,15 @@ Tolerance: 0.5</pre>
         </fieldset>
         <div class="file-row">
           <label for="file-name">File name</label>
-          <div class="file-name-wrap"><input id="file-name" type="text" autocomplete="off" spellcheck="false"><span class="ext">.txt</span></div>
+          <div class="file-name-wrap"><input id="file-name" type="text" autocomplete="off" spellcheck="false" aria-describedby="file-name-hint"><span class="ext">.txt / .zip</span></div>
+          <p id="file-name-hint" class="fineprint">Both downloads use this name: .txt to upload into a test, .zip to import as a question bank.</p>
         </div>
         <div class="export-buttons">
           <button type="button" id="btn-download" class="btn primary">Download .txt</button>
           <button type="button" id="btn-copy" class="btn">Copy</button>
         </div>
         <button type="button" id="btn-pool" class="btn wide-btn" data-tip="A Blackboard question pool package for Question banks → Import from file. Each question is worth 1 point.">Download question bank (.zip)</button>
-        <p class="fineprint">If nothing downloads, choose Copy, paste into Notepad or TextEdit, and save it as a .txt file.</p>
+        <p class="fineprint">If the .txt doesn’t download, choose Copy, paste into Notepad or TextEdit, and save it as a .txt file.</p>
         <details id="raw-details" class="raw">
           <summary>Show file contents</summary>
           <pre id="raw-out" class="raw-out" tabindex="0" aria-label="Upload file contents"></pre>

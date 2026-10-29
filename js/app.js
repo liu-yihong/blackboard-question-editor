@@ -1114,8 +1114,20 @@
             'The tab-delimited format for all 8 question types, the 250-question guidance, and the note that uploaded questions start at 0 points.'),
           item('Anthology: QTI Packages and Question Banks', 'https://help.anthology.com/blackboard/instructor/en/assessments/questions/reuse-questions/qti-packages.html',
             'Which formats Ultra question banks can import, used to decide on the .txt export.'),
+          item('Anthology: Question Banks (Ultra)', 'https://help.anthology.com/blackboard/instructor/en/assessments/questions/reuse-questions/question-banks.html',
+            'That Import from file accepts question pools exported from Original Course View, and which question types survive the import. This set the format of the question bank (.zip) export.'),
           item('Teesside University, UConn and University of Texas Permian Basin guides', 'https://eatsupport.tees.ac.uk/staff/knowledgebase/bbu-tests-upload-questions-from-a-file/',
             'Step-by-step instructor guides for uploading question files to Ultra and building them in Excel.')
+        ]),
+        group('Question bank (.zip) format', [
+          item('Moodle: Blackboard import test fixtures', 'https://github.com/moodle/moodle/tree/main/public/question/format/blackboard_six/tests/fixtures',
+            'Real Blackboard pool exports that Moodle’s importer is tested against. The question layouts in res00001.dat follow them. GPL v3; no code copied.'),
+          item('senkyoshi by Atomic Jolt', 'https://github.com/atomicjolt/senkyoshi',
+            'A Blackboard-to-Canvas converter. Its qti_pool.xml test fixture was a second real pool export to check the item layouts against. AGPL v3; no code copied.'),
+          item('R/exams: exams2blackboard', 'http://www.r-exams.org/tutorials/exams2blackboard/',
+            'An open-source writer of Blackboard pool packages. A reference for the manifest, the .bb-package-info line and per-type item details. GPL; no code copied.'),
+          item('Oklahoma Christian University Blackboard Test Generator', 'https://ed.oc.edu/blackboardquizgenerator/',
+            'Showed that a pool .zip made outside Blackboard imports cleanly, which is why the editor writes a pool package rather than QTI 2.1.')
         ]),
         group('Earlier tools that inspired the design', [
           item('Oklahoma Christian University Blackboard Test Generator', 'https://support.oc.edu/hc/en-us/articles/360027700892-Tests-Quizzes-Blackboard-Test-Quiz-Question-Generator-OC',

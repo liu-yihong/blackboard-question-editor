@@ -2,7 +2,12 @@
 
 > **Disclaimer:** Blackboard is a trademark of Anthology Inc. This is an independent project and is not affiliated with or endorsed by Anthology.
 
-Write test questions in a friendly editor, check them, and download a file for **Blackboard Ultra → Upload questions from file**. No more clicking "Add question" two hundred times. It works with Original course view too
+Write test questions in a friendly editor, check them, and download them for Blackboard in one of two ways:
+
+- a **.txt file** to add the questions to a test, via **Upload questions from file**;
+- a **question bank (.zip)** to keep them for reuse, via **Manage banks → Import from file**.
+
+No more clicking "Add question" two hundred times. It works with Original course view too.
 
 - **Live site:** <https://liu-yihong.github.io/blackboard-question-editor/>
 - **Author:** Yihong Liu (the commander), [blog.yihong-liu.com](https://blog.yihong-liu.com/) & [Claude by Anthropic](https://claude.com/) (who did the dirty coding work)
@@ -84,5 +89,7 @@ Third-party parts and their licences:
 - IBM Plex fonts: SIL Open Font License 1.1 (`fonts/LICENSE-IBM-Plex.txt`)
 - Inter font: SIL Open Font License 1.1 (`fonts/LICENSE-Inter.txt`)
 - Noto Emoji "memo" artwork: Apache 2.0, by Google, via svgmoji (MIT)
+
+The question bank (.zip) export is this project's own code. Its format follows Anthology's question bank documentation and real Blackboard pool exports: Moodle's Blackboard import test fixtures (GPL v3), the qti_pool.xml fixture in Atomic Jolt's senkyoshi (AGPL v3), and R/exams' `exams2blackboard`. The Oklahoma Christian University Blackboard Test Generator showed that a pool .zip made outside Blackboard imports cleanly. No code from these projects is included.
 
 The retro and modern styles are re-created in this project's own CSS, inspired by System.css, 98.css, XP.css, 7.css, Pico CSS, MVP.css, new.css and Sakura (all MIT). No code from those projects is included. The editor's Credits window lists them with links.
