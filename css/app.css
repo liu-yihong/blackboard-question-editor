@@ -86,9 +86,12 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .brand { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 .brand-mark { width: 28px; height: 28px; }
 .brand-name { font-family: var(--font-display); font-weight: 600; font-size: 17px; letter-spacing: .01em; white-space: nowrap; }
-.title-field { flex: 1 1 260px; min-width: 0; display: flex; align-items: center; gap: 10px; }
+/* The title field must never be squeezed by the buttons beside it: its minimum width
+   (input + "Saved in this browser at …") makes the header wrap onto a second line instead.
+   Without it, skins with wider buttons (Win98, XP, …) shrank the input to ~80px. */
+.title-field { flex: 1 1 480px; min-width: min(100%, 480px); display: flex; align-items: center; gap: 4px 10px; flex-wrap: wrap; }
 #set-title {
-  flex: 1 1 auto; min-width: 0; border: 1px solid transparent; background: transparent; border-radius: 6px;
+  flex: 1 1 260px; min-width: min(100%, 260px); border: 1px solid transparent; background: transparent; border-radius: 6px;
   padding: 6px 8px; font-weight: 500; font-size: 16px;
 }
 #set-title:hover { border-color: var(--line); }
