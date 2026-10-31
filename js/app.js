@@ -1375,8 +1375,7 @@
         group('Open-source software and fonts', [
           item('KaTeX', 'https://katex.org/', 'Renders LaTeX math in previews and MathML exports. MIT licence.'),
           item('SheetJS Community Edition', 'https://sheetjs.com/', 'Reads Excel files on import. Apache 2.0 licence.'),
-          item('Noto Emoji', 'https://github.com/googlefonts/noto-emoji', 'The memo emoji used as the logo and browser icon. Apache 2.0 licence, by Google.'),
-          item('svgmoji', 'https://github.com/svgmoji/svgmoji', 'Packaging of the Noto Emoji artwork as SVG files. MIT licence.'),
+          item('Noto Emoji', 'https://fonts.google.com/noto/specimen/Noto+Emoji', 'The keyboard emoji from the monochrome set, used as the logo and browser icon. SIL Open Font License, by Google.'),
           item('IBM Plex', 'https://github.com/IBM/plex', 'Fallback typeface, served from this site only when a device has none of the usual system fonts. SIL Open Font License.'),
           item('Fontsource', 'https://fontsource.org/', 'Packaging of the IBM Plex font files.')
         ]),

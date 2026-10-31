@@ -84,7 +84,8 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
   display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap;
 }
 .brand { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
-.brand-mark { width: 28px; height: 28px; }
+/* The logo is drawn through favicon.svg as a mask so it takes the text colour of every theme and style. */
+.brand-mark { width: 28px; height: 28px; flex: 0 0 auto; background: currentColor; -webkit-mask: url(../favicon.svg) center / contain no-repeat; mask: url(../favicon.svg) center / contain no-repeat; }
 .brand-name { font-family: var(--font-display); font-weight: 600; font-size: 17px; letter-spacing: .01em; white-space: nowrap; }
 /* The title field must never be squeezed by the buttons beside it: its minimum width
    (input + "Saved in this browser at …") makes the header wrap onto a second line instead.

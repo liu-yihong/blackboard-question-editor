@@ -66,7 +66,7 @@ Points, feedback and pictures can't be set in a .txt upload file; add them in Bl
 
 ```
 index.html          page markup, footer text and Content Security Policy
-favicon.svg         logo and browser-tab icon (Noto Emoji "memo")
+favicon.svg         logo and browser-tab icon (monochrome Noto Emoji "keyboard")
 css/app.css         all styling, including the nine styles
 js/theme.js         applies the saved style and Day/Night choice before the page paints, and hides the editor until it is drawn
 js/richtext.js      formatting and math markup
@@ -95,7 +95,7 @@ Third-party parts and their licences:
 - SheetJS Community Edition: Apache 2.0 (`vendor/LICENSE-SheetJS.txt`)
 - IBM Plex fonts: SIL Open Font License 1.1 (`fonts/LICENSE-IBM-Plex.txt`)
 - Inter font: SIL Open Font License 1.1 (`fonts/LICENSE-Inter.txt`)
-- Noto Emoji "memo" artwork: Apache 2.0, by Google, via svgmoji (MIT)
+- Noto Emoji "keyboard" artwork (monochrome set): SIL Open Font License 1.1, by Google (`fonts/LICENSE-Noto-Emoji.txt`)
 
 The question bank (.zip) export is this project's own code. Pictures are packed the way Learn exports embedded files (`csfiles/home_dir/name__xid-N_1.png`, referenced as `@X@EmbeddedFile.requestUrlStub@X@bbcswebdav/xid-N_1`), as seen in senkyoshi's tests and R/exams. Its format follows Anthology's question bank documentation and real Blackboard pool exports: Moodle's Blackboard import test fixtures (GPL v3), the qti_pool.xml fixture in Atomic Jolt's senkyoshi (AGPL v3), and R/exams' `exams2blackboard`. The Oklahoma Christian University Blackboard Test Generator showed that a pool .zip made outside Blackboard imports cleanly. No code from these projects is included.
 
