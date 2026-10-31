@@ -38,6 +38,7 @@
   const TABLE_RULE = /^\s*\|?(\s*:?-{2,}:?\s*\|)+\s*:?-{0,}:?\s*\|?\s*$/;
   const TABLE_ALIGN_LINE = /^\s*\{table\s+align\s*=\s*(left|center|right)\s*\}\s*$/i;
   const ALIGNS = ['inline', 'left', 'center', 'right'];
+  const CELL_ALIGNS = ['left', 'center', 'right'];
   const MAX_ROWS = 30, MAX_COLS = 12;
 
   function el(tag, attrs) {
@@ -89,13 +90,18 @@
   function tableMarkup(t) {
     const cols = Math.max(1, ...t.rows.map(r => r.length));
     const line = (r) => '| ' + Array.from({ length: cols }, (_, i) => String(r[i] || '').replace(/\s*\n\s*/g, ' ').replace(/(^|[^\\])\|/g, '$1\\|').trim() || ' ').join(' | ') + ' |';
+    const aligns = Array.from({ length: cols }, (_, i) => (t.aligns && CELL_ALIGNS.includes(t.aligns[i]) ? t.aligns[i] : 'left'));
+    const aligned = aligns.some(a => a !== 'left');
+    // |---| under the first row makes it headings; :---: and ---: center or right-align a column's text
+    const rule = '|' + aligns.map(a => ({ center: ':---:', right: '---:' }[a] || '---')).join('|') + '|';
     const out = [];
     if (t.align && t.align !== 'left') out.push('{table align=' + t.align + '}');
+    if (aligned && !t.head) out.push(rule); // alignment only: the rule row goes first
     t.rows.forEach((r, i) => {
       out.push(line(r));
-      if (i === 0 && t.head) out.push('|' + Array(cols).fill('---').join('|') + '|');
+      if (i === 0 && t.head) out.push(rule);
     });
-    if (t.rows.length === 1 && !t.head) out.push(line(Array(cols).fill('')));
+    if (t.rows.length === 1 && !t.head && !aligned) out.push(line(Array(cols).fill('')));
     return out.join('\n');
   }
   /** Markup → [{t:'text', s} | {t:'table', rows, head}] (tables need two or more | lines, as when rendering). */
@@ -109,12 +115,14 @@
         let j = i;
         while (j < lines.length && TABLE_LINE.test(lines[j])) j++;
         const rows = lines.slice(i, j);
-        const head = rows.length > 1 && TABLE_RULE.test(rows[1]);
+        const ruleAt = BQ.rt.tableRuleAt(rows);
+        const head = ruleAt === 1;
+        const aligns = ruleAt >= 0 ? BQ.rt.tableAligns(rows[ruleAt]) : [];
         let align = 'left';
         const am = text && text.length ? TABLE_ALIGN_LINE.exec(text[text.length - 1]) : null;
         if (am) { align = am[1].toLowerCase(); text.pop(); if (!text.length) text = null; }
         flush();
-        segs.push({ t: 'table', head, align, rows: rows.filter((r, k) => !(head && k === 1)).map(splitCells) });
+        segs.push({ t: 'table', head, align, aligns, rows: rows.filter((r, k) => k !== ruleAt).map(splitCells) });
         i = j - 1;
       } else {
         (text = text || []).push(lines[i]);
@@ -269,7 +277,17 @@
           if (!rows.length) return;
           if (o.inline) { add(rows.map(r => r.map(c => sub(c).trim()).join(' ')).join(' ')); return; }
           const head = rows[0].every(c => c.localName === 'th');
-          block(tableMarkup({ head, align: 'left', rows: rows.map(r => r.map(c => sub(c).replace(/\s+/g, ' ').trim())) }));
+          const cellAlign = (c) => {
+            const a = ((c.style && c.style.textAlign) || c.getAttribute('align') || '').toLowerCase();
+            return a === 'center' || a === 'right' ? a : 'left';
+          };
+          const ref = rows.find(r => r.length === Math.max(...rows.map(x => x.length)));
+          const aligns = ref.map((c, i) => {
+            const col = rows.map(r => r[i]).filter(Boolean).map(cellAlign);
+            const body = col.slice(head ? 1 : 0);
+            return (body.length ? body : col)[0] || 'left';
+          });
+          block(tableMarkup({ head, align: 'left', aligns, rows: rows.map(r => r.map(c => sub(c).replace(/\s+/g, ' ').trim())) }));
           return;
         }
         if (t === 'ul' || t === 'ol') {
@@ -735,10 +753,18 @@
     /* ----- tables ----- */
     function tableData(w) {
       const rows = Array.from(w.querySelectorAll('tr')).map(tr => Array.from(tr.children).map(c => prettify(serializeChildren(c, { inline: true })).trim()));
-      return { rows, head: w.dataset.head === 'true', align: w.dataset.align || 'left' };
+      const first = w.querySelector('tr');
+      const aligns = first ? Array.from(first.children).map(c => c.dataset.align || 'left') : [];
+      return { rows, head: w.dataset.head === 'true', align: w.dataset.align || 'left', aligns };
     }
-    function cellEl(tag, text) {
+    function setCellAlign(c, a) {
+      a = CELL_ALIGNS.includes(a) ? a : 'left';
+      c.dataset.align = a;
+      c.style.textAlign = a === 'left' ? '' : a;
+    }
+    function cellEl(tag, text, align) {
       const c = el(tag, { contenteditable: 'true', spellcheck: 'true' });
+      setCellAlign(c, align);
       if (text) c.append(inlineFragment(text));
       return c;
     }
@@ -748,7 +774,7 @@
       const table = el('table', { class: 'rf-grid' });
       rows.forEach((r, i) => {
         const tr = el('tr');
-        for (let c = 0; c < cols; c++) tr.append(cellEl(i === 0 && t.head ? 'th' : 'td', r[c]));
+        for (let c = 0; c < cols; c++) tr.append(cellEl(i === 0 && t.head ? 'th' : 'td', r[c], t.aligns && t.aligns[c]));
         table.append(tr);
       });
       const talign = ['left', 'center', 'right'].includes(t.align) ? t.align : 'left';
@@ -765,6 +791,34 @@
           done();
         }
       }));
+      /* text alignment of the current cell's column */
+      const ICON = {
+        left: 'M2 3h12M2 6.5h8M2 10h12M2 13.5h8',
+        center: 'M2 3h12M4 6.5h8M2 10h12M4 13.5h8',
+        right: 'M2 3h12M6 6.5h8M2 10h12M6 13.5h8'
+      };
+      const textBtns = CELL_ALIGNS.map(a => {
+        const b = el('button', {
+          type: 'button', class: 'rf-tbtn rf-ticon', 'aria-pressed': 'false', 'data-align': a,
+          title: 'Align the text in this column ' + a, 'aria-label': 'Align the text in this column ' + a,
+          onmousedown: (e) => e.preventDefault(),
+          onclick: (e) => {
+            e.preventDefault();
+            const p = where();
+            Array.from(table.rows).forEach(tr => tr.cells[p.col] && setCellAlign(tr.cells[p.col], a));
+            syncTextBtns();
+            done();
+          }
+        });
+        b.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="' + ICON[a] + '" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>';
+        return b;
+      });
+      const syncTextBtns = () => {
+        const p = where();
+        const cell = table.rows[p.row] && table.rows[p.row].cells[p.col];
+        const a = (cell && cell.dataset.align) || 'left';
+        textBtns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.align === a)));
+      };
       let current = null;
       const where = () => {
         const cell = current && w.contains(current) ? current : table.rows[table.rows.length - 1].cells[0];
@@ -784,7 +838,7 @@
       const done = () => { updateCount(); changed(); };
       const addRow = (at) => {
         const tr = el('tr');
-        for (let c = 0; c < table.rows[0].cells.length; c++) tr.append(cellEl('td', ''));
+        for (let c = 0; c < table.rows[0].cells.length; c++) tr.append(cellEl('td', '', table.rows[0].cells[c].dataset.align));
         const ref = table.rows[at];
         if (ref) ref.parentNode.insertBefore(tr, ref); else table.rows[table.rows.length - 1].parentNode.append(tr);
         done();
@@ -805,7 +859,7 @@
       headBox.addEventListener('change', () => {
         w.dataset.head = headBox.checked ? 'true' : 'false';
         Array.from(table.rows[0].cells).forEach(c => {
-          const n = cellEl(headBox.checked ? 'th' : 'td', '');
+          const n = cellEl(headBox.checked ? 'th' : 'td', '', c.dataset.align);
           while (c.firstChild) n.append(c.firstChild);
           c.replaceWith(n);
         });
@@ -831,6 +885,9 @@
           done(); focusCell(p.row, p.col);
         }),
         el('label', { class: 'rf-thead', onmousedown: (e) => e.stopPropagation() }, headBox, ' Heading row'),
+        el('span', { class: 'rf-tsub', text: 'Text' }),
+        el('span', { class: 'rf-tgroup', role: 'group', 'aria-label': 'Text alignment in this column' }, textBtns),
+        el('span', { class: 'rf-tsub', text: 'Table' }),
         el('span', { class: 'rf-tgroup', role: 'group', 'aria-label': 'Table alignment' }, alignBtns),
         btn('Delete table', 'Delete this table', () => {
           const next = w.nextSibling;
@@ -841,7 +898,8 @@
         }, 'danger'));
       w.append(bar, el('div', { class: 'rf-tscroll' }, table));
       updateCount();
-      w.addEventListener('focusin', (e) => { if (e.target.matches('td,th')) { current = e.target; w.classList.add('active'); } });
+      syncTextBtns();
+      w.addEventListener('focusin', (e) => { if (e.target.matches('td,th')) { current = e.target; w.classList.add('active'); syncTextBtns(); } });
       w.addEventListener('focusout', (e) => { if (!w.contains(e.relatedTarget)) w.classList.remove('active'); });
       w.addEventListener('keydown', (e) => {
         const cell = e.target.closest && e.target.closest('td,th');

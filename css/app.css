@@ -891,5 +891,7 @@ math { font-size: 1.08em; }
 .rf-tgroup .rf-tbtn:first-child { border-radius: 4px 0 0 4px; margin-left: 0; }
 .rf-tgroup .rf-tbtn:last-child { border-radius: 0 4px 4px 0; }
 .rf-tbtn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.rf-tsub { font-size: 11.5px; color: var(--faint); margin-left: 4px; }
+.rf-ticon { display: inline-grid; place-items: center; padding: 2px 7px; }
 .rf-table.talign-center .rf-grid { margin-left: auto; margin-right: auto; }
 .rf-table.talign-right .rf-grid { margin-left: auto; }
