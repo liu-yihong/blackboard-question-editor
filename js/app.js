@@ -555,19 +555,29 @@
     return h('div', null, h('div', { class: 'field-label' }, h('span', null, label), hint ? h('span', { class: 'hint', text: hint }) : null), kids);
   }
 
+  /* "Add" slot: the last row of a .rows list. Invisible stand-ins for the leading bubble
+     and the trailing remove button keep it lined up with the inputs in every skin. */
+  function addSlot(label, onclick, lead) {
+    return h('div', { class: 'row add-slot' },
+      lead ? h('span', { class: 'bubble slot-spacer', 'aria-hidden': 'true' }) : null,
+      h('button', { type: 'button', class: 'add-row', onclick },
+        h('span', { class: 'add-plus', html: svg('plus') }), h('span', { text: label })),
+      h('span', { class: 'icon-btn row-x slot-spacer', 'aria-hidden': 'true' }));
+  }
+
   function choicesEditor(card, q) {
     const rows = h('div', { class: 'rows' });
     const redraw = (focusIndex) => {
-      rows.replaceChildren(...q.options.map((o, idx) => choiceRow(card, q, o, idx, redraw)));
+      rows.replaceChildren(...q.options.map((o, idx) => choiceRow(card, q, o, idx, redraw)), add);
       if (focusIndex != null) { const inp = rows.querySelectorAll('.rf')[focusIndex]; if (inp) inp.focusEnd(); }
     };
-    redraw();
-    const add = h('button', { type: 'button', class: 'btn small ghost add-row', html: svg('plus') + ' Add choice', onclick: () => {
+    const add = addSlot('Add choice', () => {
       q.options.push({ text: '', correct: false });
       redraw(q.options.length - 1);
       touch(card, q);
-    } });
-    return section(q.type === 'MC' ? 'Answer choices' : 'Answer choices (one or more correct)', 'Enter adds the next choice', [rows, add]);
+    }, true);
+    redraw();
+    return section(q.type === 'MC' ? 'Answer choices' : 'Answer choices (one or more correct)', 'Enter adds the next choice', rows);
   }
   function choiceRow(card, q, o, idx, redraw) {
     const bubble = h('button', {
@@ -651,16 +661,16 @@
         });
         return h('div', { class: 'row pair' }, mk('left', 'Prompt'), h('span', { class: 'pair-sep', text: '→' }), mk('right', 'Match'),
           iconBtn('x', 'Remove pair ' + (idx + 1), () => { q.pairs.splice(idx, 1); redraw(); touch(card, q); }, 'row-x'));
-      }));
+      }), add);
       if (focus != null) { const i = rows.querySelectorAll('.rf')[focus]; if (i) i.focusEnd(); }
     };
-    redraw();
-    const add = h('button', { type: 'button', class: 'btn small ghost add-row', html: svg('plus') + ' Add pair', onclick: () => {
+    const add = addSlot('Add pair', () => {
       q.pairs.push({ left: '', right: '' });
       redraw((q.pairs.length - 1) * 2);
       touch(card, q);
-    } });
-    return section('Pairs', 'Each match must be different', [rows, add]);
+    });
+    redraw();
+    return section('Pairs', 'Each match must be different', rows);
   }
 
   function listEditor(card, q, arr, label, placeholder) {
@@ -675,12 +685,12 @@
             else if (e.key === 'Backspace' && !arr[idx] && arr.length > 1) { e.preventDefault(); arr.splice(idx, 1); redraw(Math.max(0, idx - 1)); touch(card, q); }
           }
         }),
-        iconBtn('x', 'Remove ' + label.toLowerCase(), () => { arr.splice(idx, 1); if (!arr.length) arr.push(''); redraw(); touch(card, q); }, 'row-x'))));
+        iconBtn('x', 'Remove ' + label.toLowerCase(), () => { arr.splice(idx, 1); if (!arr.length) arr.push(''); redraw(); touch(card, q); }, 'row-x'))), add);
       if (focus != null) { const i = rows.querySelectorAll('input')[focus]; if (i) i.focus(); }
     };
+    const add = addSlot('Add another', () => { arr.push(''); redraw(arr.length - 1); touch(card, q); });
     redraw();
-    const add = h('button', { type: 'button', class: 'btn small ghost add-row', html: svg('plus') + ' Add another', onclick: () => { arr.push(''); redraw(arr.length - 1); touch(card, q); } });
-    return [rows, add];
+    return rows;
   }
 
   function fibEditor(card, q) {
