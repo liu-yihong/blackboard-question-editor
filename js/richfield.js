@@ -1,9 +1,16 @@
 /*
  * Visual fields: the question, choice, matching and feedback boxes.
  *
- * Text stays as the editor's markup (**bold**, $math$, [blank] …), so Form and
- * Text mode still share one representation. Tables and pictures are shown the
- * way students will see them and edited in place:
+ * The fields are WYSIWYG: bold, italic, superscript, subscript, code and math are
+ * shown the way students will see them. The value is still the editor's markup
+ * (**bold**, _italic_, $math$, [blank] …), so Form and Text mode share one
+ * representation. When the DOM is read back, a short marker such as _x_ is only
+ * written when it renders exactly like the formatting on screen; otherwise the
+ * field writes the equivalent tag (<em>x</em>), so what you see always matches
+ * the Student view and the export. Typed characters that would otherwise be read
+ * as markup (*, _, $, ^, ~, `) are escaped with a backslash.
+ *
+ * Tables and pictures are shown the way students will see them and edited in place:
  *   - a table is a grid of editable cells with buttons to add or remove rows
  *     and columns; it is stored as | a | b | rows;
  *   - a picture is shown as the picture; clicking it opens settings for its
@@ -18,6 +25,8 @@
  *   f.saveSelection()     remember the caret before a dialog takes focus
  *   f.insertTable(rows, cols, heading)
  *   f.insertPicture(name, { width })
+ *   f.format(kind)        'bold' | 'italic' | 'sup' | 'sub' | 'code' | 'math'
+ *   f.formatState()       { bold, italic, sup, sub, code } at the caret
  */
 (function () {
   'use strict';
@@ -115,6 +124,216 @@
     return segs;
   }
 
+  /* ---------- inline formatting: markup → DOM ---------- */
+
+  const ZWSP = '​';
+  function mathHtml(tex, display) {
+    const k = globalThis.katex;
+    if (k && typeof k.renderToString === 'function') {
+      try {
+        const html = k.renderToString(tex, { output: 'mathml', displayMode: !!display, throwOnError: false, strict: 'ignore' });
+        const m = /<math[\s\S]*<\/math>/.exec(html);
+        if (m) return m[0];
+      } catch (e) { /* fall through */ }
+    }
+    return BQ.rt.escapeHtml(BQ.rt.texToUnicode(tex));
+  }
+  function mathChip(tex, display) {
+    const c = el('span', {
+      class: 'rf-math' + (display ? ' rf-math-display' : ''), contenteditable: 'false', 'data-kind': 'math',
+      'data-tex': tex, 'data-display': display ? '1' : null, title: 'Math: ' + tex + ' (click to edit)'
+    });
+    c.innerHTML = mathHtml(tex, display);
+    return c;
+  }
+  /** Inline markup (no tables, no project pictures) → a fragment of formatted nodes. */
+  function inlineFragment(s) {
+    const box = document.createElement('div');
+    box.innerHTML = BQ.rt.toHtml(String(s || ''), { math: 'mathml' });
+    box.querySelectorAll('math').forEach(m => {
+      const ann = m.querySelector('annotation');
+      const tex = (ann ? ann.textContent : m.textContent).trim();
+      m.replaceWith(mathChip(tex, m.getAttribute('display') === 'block'));
+    });
+    // a caret stop after code that ends a line, so typing there isn't stuck inside it
+    box.querySelectorAll('code').forEach(c => {
+      if (!c.nextSibling || (c.nextSibling.nodeType === 1 && c.nextSibling.localName === 'br')) c.after(document.createTextNode(ZWSP));
+    });
+    const frag = document.createDocumentFragment();
+    while (box.firstChild) frag.append(box.firstChild);
+    return frag;
+  }
+
+  /* ---------- inline formatting: DOM → markup ---------- */
+
+  const ENTITY_AT = /^&(#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);/;
+  const ESCAPABLE = '\\*_$^~`[]=;|<&#';
+  const isWord = (c) => !!c && /[\p{L}\p{N}_]/u.test(c);
+  /** Escape typed text so it reads back literally (and stays readable in Text mode). */
+  function escText(s) {
+    let o = '';
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i], p = s[i - 1] || '', n = s[i + 1] || '';
+      if (c === '\\') o += !n || ESCAPABLE.includes(n) ? '\\\\' : c;
+      else if (c === '$' || c === '`' || c === '^' || c === '~') o += '\\' + c;
+      else if (c === '*') o += p === '*' || n === '*' || !n || !p ? '\\*' : c;
+      else if (c === '_') o += p === '_' || n === '_' || (isWord(p) && isWord(n)) ? c : '\\_';
+      else if (c === '<') o += !n || /[a-zA-Z\/]/.test(n) ? '\\<' : c;
+      else if (c === '&') o += ENTITY_AT.test(s.slice(i)) ? '\\&' : c;
+      else o += c;
+    }
+    return o;
+  }
+  const cleanText = (s) => s.replace(/​/g, '').replace(/ /g, ' ');
+  const INLINE_TAG = { b: 'strong', strong: 'strong', i: 'em', em: 'em', u: 'u', s: 's', strike: 's', del: 's', sup: 'sup', sub: 'sub' };
+  /** Formatting carried by an element's own style (pasted from Word or Google Docs, or made by the browser). */
+  function styleTags(n) {
+    const st = n.style;
+    if (!st) return [];
+    const out = [];
+    const fw = st.fontWeight;
+    if (fw && (/bold/.test(fw) || +fw >= 600)) out.push('strong');
+    if (st.fontStyle === 'italic') out.push('em');
+    if (/underline/.test(st.textDecoration || st.textDecorationLine || '')) out.push('u');
+    if (st.verticalAlign === 'super') out.push('sup');
+    else if (st.verticalAlign === 'sub') out.push('sub');
+    return out;
+  }
+  const notBold = (n) => n.style && n.style.fontWeight && (/normal/.test(n.style.fontWeight) || +n.style.fontWeight < 600);
+
+  /**
+   * Serialize the children of `node` to markup.
+   *   inline: true  → one line (table cells, single-line fields): line breaks become spaces
+   *   isRoot        → the field itself: its last <br> is the browser's placeholder
+   */
+  function serializeChildren(node, o) {
+    o = o || {};
+    let out = '';
+    let emitted = false;
+    let afterBlock = false;
+    const add = (s) => {
+      if (!s) return;
+      if (afterBlock) { out += '\n'; afterBlock = false; }
+      out += s;
+      emitted = true;
+    };
+    const block = (s) => {
+      if (emitted) out += '\n';
+      out += s;
+      emitted = true;
+      afterBlock = true;
+    };
+    const sub = (n) => serializeChildren(n, { inline: o.inline, pictureMarkup: o.pictureMarkup, tableMarkup: o.tableMarkup });
+    const wrap = (tags, inner) => {
+      if (!inner.trim()) return inner;
+      const lead = /^\s*/.exec(inner)[0], trail = /\s*$/.exec(inner)[0];
+      let mid = inner.trim();
+      for (let i = tags.length - 1; i >= 0; i--) mid = '<' + tags[i] + '>' + mid + '</' + tags[i] + '>';
+      return lead + mid + trail;
+    };
+    const walk = (parent, isRoot) => {
+      const kids = Array.from(parent.childNodes);
+      kids.forEach((k, i) => {
+        if (k.nodeType === 3) { add(escText(cleanText(k.data))); return; }
+        if (k.nodeType !== 1) return;
+        const kind = k.dataset && k.dataset.kind;
+        const t = k.localName;
+        if (kind === 'img') { if (o.pictureMarkup) add(o.pictureMarkup(k)); return; }
+        if (kind === 'table') { if (o.tableMarkup && !o.inline) block(o.tableMarkup(k)); return; }
+        if (kind === 'math') {
+          const tex = k.getAttribute('data-tex') || '';
+          if (tex.trim()) { const d = k.getAttribute('data-display') && !o.inline ? '$$' : '$'; add(d + tex.trim() + d); }
+          return;
+        }
+        if (t === 'br') {
+          if (isRoot && i === kids.length - 1) return; // the browser's placeholder for the last line
+          add(o.inline ? ' ' : '\n');
+          return;
+        }
+        if (t === 'math') { const a = k.querySelector('annotation'); add('$' + (a ? a.textContent : k.textContent).trim() + '$'); return; }
+        if (t === 'style' || t === 'script' || t === 'meta' || t === 'title' || t === 'button' || t === 'input') return;
+        if (t === 'img') {
+          const src = (k.getAttribute('src') || '').trim();
+          if (/^https?:/i.test(src)) add('<img src="' + attrQ(src) + '" alt="' + attrQ(k.getAttribute('alt') || '') + '"' + (/^\d+$/.test(k.getAttribute('width') || '') ? ' width="' + k.getAttribute('width') + '"' : '') + '>');
+          return;
+        }
+        if (t === 'code' || t === 'kbd' || t === 'samp' || t === 'tt') {
+          const txt = cleanText(k.textContent);
+          if (!txt) return;
+          add(!/[`\n]/.test(txt) && !out.endsWith('\\') ? '`' + txt + '`' : '<code>' + escText(txt.replace(/\n/g, ' ')) + '</code>');
+          return;
+        }
+        if (t === 'table') {
+          // a table pasted from another program
+          const rows = Array.from(k.querySelectorAll('tr')).map(tr => Array.from(tr.children).filter(c => /^t[dh]$/.test(c.localName)));
+          if (!rows.length) return;
+          if (o.inline) { add(rows.map(r => r.map(c => sub(c).trim()).join(' ')).join(' ')); return; }
+          const head = rows[0].every(c => c.localName === 'th');
+          block(tableMarkup({ head, align: 'left', rows: rows.map(r => r.map(c => sub(c).replace(/\s+/g, ' ').trim())) }));
+          return;
+        }
+        if (t === 'ul' || t === 'ol') {
+          const items = Array.from(k.children).filter(c => c.localName === 'li').map(li => sub(li).trim()).filter(Boolean);
+          if (!items.length) return;
+          if (o.inline) { add(items.join('; ')); return; }
+          block('<' + t + '>' + items.map(x => '<li>' + x.replace(/\n/g, '<br>') + '</li>').join('') + '</' + t + '>');
+          return;
+        }
+        if (t === 'a') {
+          const href = (k.getAttribute('href') || '').trim();
+          const inner = sub(k);
+          add(/^(https?:|mailto:)/i.test(href) && inner.trim() ? '<a href="' + attrQ(href) + '">' + inner + '</a>' : inner);
+          return;
+        }
+        let tags = [];
+        if (INLINE_TAG[t] && !(INLINE_TAG[t] === 'strong' && notBold(k))) tags.push(INLINE_TAG[t]);
+        styleTags(k).forEach(x => { if (!tags.includes(x)) tags.push(x); });
+        if (tags.length) { add(wrap(tags, sub(k))); return; }
+        if (/^(div|p|h[1-6]|blockquote|pre|li|tr)$/.test(t)) {
+          if (emitted && !out.endsWith('\n')) add(o.inline ? ' ' : '\n');
+          walk(k, false);
+          if (/^(p|h[1-6]|blockquote|pre)$/.test(t) && k.nextSibling && !o.inline) add('\n');
+          return;
+        }
+        walk(k, false);
+      });
+    };
+    walk(node, !!o.isRoot);
+    return o.inline ? out.replace(/\n/g, ' ') : out;
+  }
+
+  /* Prefer the short markers (**x**, _x_, ^x^, ~x~) wherever they render exactly like the tag. */
+  const MARKER = { strong: '**', em: '_', sup: '^', sub: '~' };
+  const SHORTABLE = /<(strong|em|sup|sub)>((?:(?!<\/?(?:strong|em|sup|sub)>)[\s\S])*?)<\/\1>/g;
+  const normBox = typeof document !== 'undefined' ? document.createElement('template') : null;
+  function rendered(markup) {
+    normBox.innerHTML = BQ.rt.toHtml(markup, { math: 'latex' });
+    return normBox.innerHTML;
+  }
+  function prettify(markup) {
+    if (!/<(strong|em|sup|sub)>/.test(markup)) return markup;
+    const want = rendered(markup);
+    const keep = [];
+    const restore = (x) => {
+      for (let k = 0; k < 20 && /\u0001/.test(x); k++) x = x.replace(/\u0001(\d+)\u0001/g, (m, i) => keep[+i]);
+      return x;
+    };
+    let s = markup;
+    for (let guard = 0; guard < 200; guard++) {
+      SHORTABLE.lastIndex = 0;
+      const m = SHORTABLE.exec(s);
+      if (!m) break;
+      const mk = MARKER[m[1]];
+      const cand = s.slice(0, m.index) + mk + m[2] + mk + s.slice(m.index + m[0].length);
+      if (m[2].trim() && rendered(restore(cand)) === want) { s = cand; continue; }
+      // keep the tag: park it behind a token so the scan moves on
+      keep.push(m[0]);
+      s = s.slice(0, m.index) + '\u0001' + (keep.length - 1) + '\u0001' + s.slice(m.index + m[0].length);
+    }
+    s = restore(s);
+    return rendered(s) === want ? s : markup;
+  }
+
   /* ---------- the field ---------- */
 
   function richField(opts) {
@@ -132,10 +351,7 @@
 
     /* ----- building ----- */
     function textNodes(s, parent) {
-      String(s).split('\n').forEach((part, i) => {
-        if (i) parent.append(el('br'));
-        if (part) parent.append(document.createTextNode(part));
-      });
+      if (s) parent.append(inlineFragment(s));
     }
     function inlinePieces(s, parent) {
       let last = 0;
@@ -159,45 +375,12 @@
     }
 
     /* ----- reading ----- */
+    const serOpts = {
+      pictureMarkup: (k) => pictureMarkup(pictureData(k)),
+      tableMarkup: (k) => tableMarkup(tableData(k))
+    };
     function getValue() {
-      let out = '';
-      let emitted = false;
-      let afterBlock = false;
-      const add = (s) => {
-        if (!s) return;
-        if (afterBlock) { out += '\n'; afterBlock = false; }
-        out += s;
-        emitted = true;
-      };
-      const walk = (node, isRoot) => {
-        const kids = Array.from(node.childNodes);
-        kids.forEach((k, i) => {
-          if (k.nodeType === 3) { add(k.data.replace(/ /g, ' ').replace(/​/g, '')); return; }
-          if (k.nodeType !== 1) return;
-          const kind = k.dataset && k.dataset.kind;
-          if (kind === 'img') { add(pictureMarkup(pictureData(k))); return; }
-          if (kind === 'table') {
-            if (emitted) out += '\n';
-            out += tableMarkup(tableData(k));
-            emitted = true;
-            afterBlock = true;
-            return;
-          }
-          if (k.tagName === 'BR') {
-            if (isRoot && i === kids.length - 1) return; // the browser's placeholder for the last line
-            add('\n');
-            return;
-          }
-          if (k.tagName === 'DIV' || k.tagName === 'P') {
-            if (emitted && !out.endsWith('\n')) add('\n');
-            walk(k, false);
-            return;
-          }
-          walk(k, false);
-        });
-      };
-      walk(root, true);
-      return multiline ? out : out.replace(/\n/g, ' ');
+      return prettify(serializeChildren(root, Object.assign({ isRoot: true, inline: !multiline }, serOpts)));
     }
     Object.defineProperty(root, 'value', { get: getValue, set: setValue });
 
@@ -296,12 +479,173 @@
       sel.addRange(nr);
     }
 
+    /* ----- formatting commands (toolbar and shortcuts) ----- */
+    const COMMANDS = { bold: 'bold', italic: 'italic', sup: 'superscript', sub: 'subscript' };
+    function caretElement() {
+      const r = rangeInside();
+      if (!r) return null;
+      const n = r.startContainer;
+      return n.nodeType === 1 ? n : n.parentNode;
+    }
+    root.format = (kind) => {
+      if (kind === 'math') { openMathPanel(null); return; }
+      if (!rangeInside()) {
+        if (saved && root.contains(saved.startContainer)) restoreSelection(); else caretToEnd();
+      }
+      if (kind === 'code') { toggleCode(); return; }
+      const cmd = COMMANDS[kind];
+      if (!cmd) return;
+      const host = (caretElement() || root).closest('td,th,.rf');
+      if (host && document.activeElement !== host) host.focus();
+      try { document.execCommand('styleWithCSS', false, false); } catch (e) { /* ignore */ }
+      document.execCommand(cmd, false, null);
+      changed();
+    };
+    root.formatState = () => {
+      const st = { bold: false, italic: false, sup: false, sub: false, code: false };
+      const e = caretElement();
+      if (!e) return st;
+      for (const k in COMMANDS) { try { st[k] = document.queryCommandState(COMMANDS[k]); } catch (x) { /* ignore */ } }
+      st.code = !!(e.closest('code') && root.contains(e.closest('code')));
+      return st;
+    };
+    function toggleCode() {
+      const r = rangeInside();
+      if (!r) return;
+      const start = caretElement();
+      const code = start && start.closest('code');
+      const sel = getSelection();
+      if (code && root.contains(code)) {
+        const t = document.createTextNode(cleanText(code.textContent));
+        code.replaceWith(t);
+        const nr = document.createRange();
+        nr.selectNodeContents(t);
+        sel.removeAllRanges(); sel.addRange(nr);
+      } else if (r.collapsed) {
+        const c = el('code', null, ZWSP);
+        r.insertNode(c);
+        const nr = document.createRange();
+        nr.setStart(c.firstChild, 1); nr.collapse(true);
+        sel.removeAllRanges(); sel.addRange(nr);
+      } else {
+        const c = el('code', null, r.toString());
+        r.deleteContents();
+        r.insertNode(c);
+        if (!c.nextSibling) c.after(document.createTextNode(ZWSP));
+        const nr = document.createRange();
+        nr.selectNodeContents(c);
+        sel.removeAllRanges(); sel.addRange(nr);
+      }
+      changed();
+    }
+
+    /* ----- math: shown rendered, edited in a small panel ----- */
+    function openMathPanel(chip) {
+      closePanel();
+      const r0 = rangeInside();
+      const range = r0 ? r0.cloneRange() : (saved && root.contains(saved.startContainer) ? saved.cloneRange() : null);
+      const selText = !chip && range && !range.collapsed ? range.toString().trim() : '';
+      const input = el('input', { type: 'text', class: 'inp rf-mono', placeholder: 'For example: \\frac{a}{b} or x^2', 'aria-label': 'Math in LaTeX', spellcheck: 'false', autocomplete: 'off' });
+      input.value = chip ? chip.getAttribute('data-tex') : selText;
+      const disp = el('input', { type: 'checkbox' });
+      disp.checked = !!(chip && chip.getAttribute('data-display'));
+      const prev = el('div', { class: 'rf-mprev', 'aria-live': 'polite' });
+      const preview = () => {
+        const v = input.value.trim();
+        if (v) prev.innerHTML = mathHtml(v, disp.checked);
+        else prev.replaceChildren(el('span', { class: 'rf-mhint', text: 'The math shows here the way students will see it.' }));
+      };
+      input.addEventListener('input', preview);
+      disp.addEventListener('change', preview);
+      let result = chip;
+      const caretAfter = (node) => {
+        root.focus();
+        const nr = document.createRange();
+        const nx = node && node.isConnected ? node.nextSibling : null;
+        if (nx && nx.nodeType === 3) nr.setStart(nx, nx.data[0] === ZWSP ? 1 : 0);
+        else if (node && node.isConnected) nr.setStartAfter(node);
+        else { caretToEnd(); return; }
+        nr.collapse(true);
+        const sel = getSelection();
+        sel.removeAllRanges(); sel.addRange(nr);
+      };
+      const commit = () => {
+        const tex = input.value.trim();
+        if (!tex) { if (chip) { chip.remove(); result = null; changed(); } closePanel(true); return; }
+        const c = mathChip(tex, multiline && disp.checked);
+        if (chip) chip.replaceWith(c);
+        else {
+          root.focus();
+          let r = range && root.contains(range.startContainer) ? range : null;
+          if (!r) { caretToEnd(); r = getSelection().getRangeAt(0); }
+          r.deleteContents();
+          r.insertNode(c);
+        }
+        if (!c.nextSibling || c.nextSibling.nodeType !== 3) c.after(document.createTextNode(ZWSP));
+        result = c;
+        ensureTail();
+        changed();
+        closePanel(true);
+      };
+      const panel = el('div', { class: 'rf-panel', role: 'dialog', 'aria-label': 'Math' },
+        el('div', { class: 'rf-panel-title', text: chip ? 'Edit math' : 'Insert math' }),
+        el('label', { class: 'rf-plabel' }, el('span', { text: 'LaTeX' }), input),
+        multiline ? el('label', { class: 'rf-check' }, disp, ' On its own line') : null,
+        prev,
+        el('div', { class: 'rf-panel-actions' },
+          chip ? el('button', { type: 'button', class: 'btn small danger', text: 'Remove', onclick: () => { chip.remove(); result = null; changed(); closePanel(true); } }) : null,
+          el('button', { type: 'button', class: 'btn small', text: 'Cancel', onclick: () => closePanel(true) }),
+          el('button', { type: 'button', class: 'btn small primary', text: chip ? 'Update' : 'Insert', onclick: commit })));
+      panel.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePanel(true); }
+        if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commit(); }
+      });
+      document.body.append(panel);
+      const anchor = chip || null;
+      const place = () => {
+        let rect = anchor && anchor.isConnected ? anchor.getBoundingClientRect() : null;
+        if (!rect && range) { const rr = range.getBoundingClientRect(); if (rr.width || rr.height) rect = rr; }
+        if (!rect) rect = root.getBoundingClientRect();
+        const pw = panel.offsetWidth, ph = panel.offsetHeight;
+        let top = rect.bottom + 8;
+        if (top + ph > innerHeight - 8 && rect.top - ph - 8 > 8) top = rect.top - ph - 8;
+        panel.style.top = Math.max(8, top) + 'px';
+        panel.style.left = Math.min(Math.max(8, rect.left), innerWidth - pw - 8) + 'px';
+      };
+      preview();
+      place();
+      if (chip) chip.classList.add('selected');
+      const outside = (e) => { if (!panel.contains(e.target) && !(chip && chip.contains(e.target))) closePanel(); };
+      setTimeout(() => document.addEventListener('mousedown', outside, true), 0);
+      addEventListener('scroll', place, true);
+      addEventListener('resize', place);
+      activePanel = {
+        panel, w: chip || root,
+        refocus: () => {
+          if (result && result.isConnected) caretAfter(result);
+          else if (range && root.contains(range.startContainer)) { root.focus(); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); }
+          else caretToEnd();
+        },
+        cleanup: () => { document.removeEventListener('mousedown', outside, true); removeEventListener('scroll', place, true); removeEventListener('resize', place); if (chip) chip.classList.remove('selected'); }
+      };
+      input.focus();
+      input.select();
+    }
+    root.addEventListener('mousedown', (e) => { if (e.target.closest && e.target.closest('.rf-math')) e.preventDefault(); });
+    root.addEventListener('click', (e) => {
+      const m = e.target.closest && e.target.closest('.rf-math');
+      if (m && root.contains(m)) { e.preventDefault(); openMathPanel(m); }
+    });
+
     /* ----- keyboard, paste, drop ----- */
     root.addEventListener('keydown', (e) => {
       const mod = e.ctrlKey || e.metaKey;
-      if (mod && !e.altKey && /^[biu]$/i.test(e.key)) {
-        // the app turns Ctrl+B / Ctrl+I into **markup**; never let the browser add <b> or <u>
-        if (e.key.toLowerCase() === 'u') e.preventDefault();
+      if (mod && !e.altKey && !e.shiftKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'u') e.preventDefault(); // no underline: Blackboard's upload format has no marker for it
+        const kind = { b: 'bold', i: 'italic', m: 'math' }[k];
+        if (kind) { e.preventDefault(); root.format(kind); return; }
+        if (e.key === '`') { e.preventDefault(); root.format('code'); return; }
       }
       if (opts.onKeyDown) opts.onKeyDown(e);
       if (e.defaultPrevented) return;
@@ -315,25 +659,52 @@
         }
       }
     });
+    /** Insert markup at the caret, shown formatted. Tables and pictures rebuild the field. */
+    function insertMarkup(markup, inCell) {
+      if (!multiline || inCell) markup = markup.replace(/\s*\n\s*/g, ' ');
+      if (!markup) return;
+      if (multiline && !inCell && (/(^|\n)\s*\|.*\|\s*\n\s*\|/.test(markup) || /<img\b/i.test(markup))) {
+        const token = 'RFPASTE' + Math.random().toString(36).slice(2) + 'Z';
+        document.execCommand('insertText', false, token);
+        const v = getValue();
+        setValue(v.indexOf(token) >= 0 ? v.replace(token, () => markup) : v + markup);
+        caretToEnd();
+      } else if (!/[\\*_$^~`<&\n]/.test(markup)) {
+        document.execCommand('insertText', false, markup);
+      } else {
+        const box = document.createElement('div');
+        box.append(inlineFragment(markup));
+        document.execCommand('insertHTML', false, box.innerHTML);
+      }
+      changed();
+    }
+    root.insertMarkup = (markup) => { root.focus(); ensureCaret(); insertMarkup(markup, !!(caretElement() && caretElement().closest('td,th'))); };
     root.addEventListener('paste', (e) => {
-      const files = Array.from((e.clipboardData && e.clipboardData.files) || []).filter(f => /^image\//.test(f.type));
+      const cd = e.clipboardData;
+      const files = Array.from((cd && cd.files) || []).filter(f => /^image\//.test(f.type));
       e.preventDefault();
-      if (files.length) {
-        const inCell = e.target.closest && e.target.closest('td,th');
+      const inCell = !!(caretElement() && caretElement().closest('td,th'));
+      const html = (cd && cd.getData('text/html')) || '';
+      let text = ((cd && cd.getData('text/plain')) || '').replace(/\r\n?/g, '\n');
+      if (files.length && !text.trim()) {
         if (inCell) { flashNote(root, 'Pictures go outside the table. Click below the table and paste again.'); return; }
         if (opts.onPastePicture) opts.onPastePicture(root, files[0]);
         return;
       }
-      let text = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
-      text = text.replace(/\r\n?/g, '\n');
-      const inCell = e.target.closest && e.target.closest('td,th');
-      if (!multiline || inCell) text = text.replace(/\s*\n\s*/g, ' ');
-      document.execCommand('insertText', false, text);
-      if (multiline && !inCell && (/(^|\n)\s*\|.*\|\s*\n\s*\|/.test(text) || /<img\b/i.test(text))) {
-        setValue(getValue());
-        caretToEnd();
+      if (html.trim()) {
+        // keep the formatting this editor supports; drop the rest
+        const box = document.createElement('div');
+        box.innerHTML = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<(style|script|meta|title|head|xml)\b[\s\S]*?<\/\1>/gi, '');
+        box.querySelectorAll('img:not([data-kind] img)').forEach(i => i.remove());
+        const walker = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+        const texts = [];
+        while (walker.nextNode()) texts.push(walker.currentNode);
+        texts.forEach(t => { if (!t.parentNode.closest('pre')) t.data = t.data.replace(/[\t\n\r ]+/g, ' '); });
+        const mk = prettify(serializeChildren(box, Object.assign({ inline: !multiline || inCell }, serOpts))).replace(/^\s+|\s+$/g, '');
+        if (mk || !text) { insertMarkup(mk, inCell); return; }
       }
-      changed();
+      // plain text is read as markup, as in Text mode (so **bold** or $x^2$ pasted from there keeps its formatting)
+      insertMarkup(text, inCell);
     });
     root.addEventListener('drop', (e) => {
       // dropped text arrives as plain text; dropped files are handled by the app
@@ -363,12 +734,12 @@
 
     /* ----- tables ----- */
     function tableData(w) {
-      const rows = Array.from(w.querySelectorAll('tr')).map(tr => Array.from(tr.children).map(c => c.textContent.replace(/ /g, ' ').replace(/​/g, '')));
+      const rows = Array.from(w.querySelectorAll('tr')).map(tr => Array.from(tr.children).map(c => prettify(serializeChildren(c, { inline: true })).trim()));
       return { rows, head: w.dataset.head === 'true', align: w.dataset.align || 'left' };
     }
     function cellEl(tag, text) {
       const c = el(tag, { contenteditable: 'true', spellcheck: 'true' });
-      c.textContent = text || '';
+      if (text) c.append(inlineFragment(text));
       return c;
     }
     function tableWidget(t) {
@@ -434,7 +805,8 @@
       headBox.addEventListener('change', () => {
         w.dataset.head = headBox.checked ? 'true' : 'false';
         Array.from(table.rows[0].cells).forEach(c => {
-          const n = cellEl(headBox.checked ? 'th' : 'td', c.textContent);
+          const n = cellEl(headBox.checked ? 'th' : 'td', '');
+          while (c.firstChild) n.append(c.firstChild);
           c.replaceWith(n);
         });
         done();
@@ -623,7 +995,8 @@
       activePanel = null;
       a.cleanup();
       a.panel.remove();
-      if (refocus && a.w.isConnected) {
+      if (refocus && a.refocus) a.refocus();
+      else if (refocus && a.w.isConnected) {
         root.focus();
         const r = document.createRange();
         r.setStartAfter(a.w);

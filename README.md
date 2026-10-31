@@ -28,7 +28,8 @@ Questions stay in your browser. The page never sends them anywhere, and GitHub o
 - **All 8 question types Ultra can upload**: Multiple choice, Multiple answer, True/False, Essay, Matching, Fill in the blank, Fill in multiple blanks and Numeric.
 - **Checks before download**: it catches each error that would make Blackboard silently skip a question, such as a missing correct answer, a blank without answers, a non-numeric answer, or more than 10 blanks.
 - **Rich text and math**:
-  - Formatting: `**bold**`, `_italic_`, `x^2^`, `H~2~O`, and LaTeX between `$…$`.
+  - Form mode is WYSIWYG: bold, italics, superscript, subscript, code and math show in the fields the way students will see them. Select text and use the toolbar or Ctrl+B / Ctrl+I / Ctrl+M; click a formula to edit its LaTeX.
+  - In Text mode the same formatting is typed as `**bold**`, `_italic_`, `x^2^`, `H~2~O`, and LaTeX between `$…$`.
   - Math exports in one of three forms: Unicode text, MathML, or LaTeX source.
   - Tables: the *▦ table* button opens a size picker (rows × columns, optional heading row). The table appears in the question as a grid: type into the cells, press Tab to move on, and use its buttons to add or remove rows and columns. The table's bar also aligns it left, center or right. In Text mode a table is written as rows like `| a | b |` (a `|---|---|` line under the first row makes it a heading row), with an optional `{table align=center}` (or `right`) line just above it.
 - **Feedback and pictures** (question bank .zip only):
@@ -70,7 +71,7 @@ favicon.svg         logo and browser-tab icon (monochrome Noto Emoji "keyboard")
 css/app.css         all styling, including the nine styles
 js/theme.js         applies the saved style and Day/Night choice before the page paints, and hides the editor until it is drawn
 js/richtext.js      formatting and math markup
-js/richfield.js     the visual fields: tables and pictures shown and edited in place
+js/richfield.js     the visual (WYSIWYG) fields: formatting, math, tables and pictures shown and edited in place
 js/model.js         question types and checks
 js/bbtxt.js         reading and writing Blackboard's tab-delimited files
 js/bbpool.js        writing Blackboard question pool packages (.zip) for bank import, with feedback and pictures

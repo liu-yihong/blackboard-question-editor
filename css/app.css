@@ -867,6 +867,17 @@ math { font-size: 1.08em; }
 .rf-align button { padding: 6px 12px; min-height: 32px; }
 .rf-panel-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .rf-note { font-size: 13px; color: var(--warn); padding: 4px 10px; }
+/* WYSIWYG formatting inside the fields */
+.rf code { font-family: var(--font-mono); font-size: .92em; background: var(--surface-2); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; }
+.rf sup, .rf sub { font-size: .75em; line-height: 0; }
+.rf-math { display: inline-block; padding: 0 3px; margin: 0 1px; border-radius: 4px; cursor: pointer; background: var(--accent-soft); outline: 1px solid transparent; user-select: none; line-height: 1.3; }
+.rf-math:hover, .rf-math.selected { outline-color: var(--accent); }
+.rf-math-display { display: block; text-align: center; margin: 4px 0; padding: 4px; }
+.rf-mono { font-family: var(--font-mono); }
+.rf-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.rf-mprev { min-height: 34px; padding: 6px 8px; border: 1px dashed var(--line-strong); border-radius: 6px; overflow-x: auto; font-size: 16px; }
+.rf-mhint { font-size: 12.5px; color: var(--faint); }
+.rt-toolbar button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 
 /* insert-table dialog */
 .tpick { display: grid; grid-template-columns: repeat(10, 22px); gap: 3px; margin: 6px 0 10px; }

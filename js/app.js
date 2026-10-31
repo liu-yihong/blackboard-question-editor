@@ -287,20 +287,26 @@
   };
   function toolbar(card, q, mainField) {
     const target = () => (activeField && card.contains(activeField) ? activeField : mainField);
-    const b = (label, title, fn, cls) => h('button', {
+    const b = (label, title, fn, cls, fmtKind) => h('button', {
       type: 'button', title, 'aria-label': title, class: cls || null,
+      'data-fmt': fmtKind || null, 'aria-pressed': fmtKind && fmtKind !== 'math' ? 'false' : null,
       onmousedown: (e) => e.preventDefault(),
       onclick: fn, html: label
     });
-    const fmt = (k) => () => { const f = FORMATS[k]; wrapSelection(target(), f[0], f[1], f[2]); };
+    const fmt = (k) => () => {
+      const t = target();
+      if (t && t.isRichField) { t.format(k); syncFormatButtons(); return; }
+      const f = FORMATS[k];
+      wrapSelection(t, f[0], f[1], f[2]);
+    };
     const kids = [
-      b('<b>B</b>', 'Bold (Ctrl+B)', fmt('bold')),
-      b('<i>I</i>', 'Italic (Ctrl+I)', fmt('italic')),
-      b('x<sup>2</sup>', 'Superscript', fmt('sup')),
-      b('x<sub>2</sub>', 'Subscript', fmt('sub')),
+      b('<b>B</b>', 'Bold (Ctrl+B)', fmt('bold'), null, 'bold'),
+      b('<i>I</i>', 'Italic (Ctrl+I)', fmt('italic'), null, 'italic'),
+      b('x<sup>2</sup>', 'Superscript', fmt('sup'), null, 'sup'),
+      b('x<sub>2</sub>', 'Subscript', fmt('sub'), null, 'sub'),
       h('span', { class: 'sep' }),
-      b('<span style="font-family:var(--font-mono)">{ }</span>', 'Code', fmt('code')),
-      b('∑ math', 'Math (LaTeX, Ctrl+M)', fmt('math')),
+      b('<span style="font-family:var(--font-mono)">{ }</span>', 'Code (Ctrl+`)', fmt('code'), null, 'code'),
+      b('∑ math', 'Math (LaTeX, Ctrl+M)', fmt('math'), null, 'math'),
       h('span', { class: 'sep' }),
       b('▦ table', 'Insert a table', () => {
         const t = target();
@@ -331,6 +337,19 @@
     const f = e.target.closest && e.target.closest('.rt');
     if (f) activeField = f;
   });
+  /* Light up B, I, x² … while the caret is in text formatted that way. */
+  function syncFormatButtons() {
+    const a = document.activeElement;
+    const f = a && a.closest && a.closest('.rf');
+    const st = f && f.formatState ? f.formatState() : null;
+    document.querySelectorAll('.rt-toolbar [data-fmt][aria-pressed]').forEach(btn => {
+      const card = btn.closest('.qcard');
+      const on = !!(st && card && card.contains(f) && st[btn.dataset.fmt]);
+      if (btn.getAttribute('aria-pressed') !== String(on)) btn.setAttribute('aria-pressed', String(on));
+    });
+  }
+  document.addEventListener('selectionchange', debounce(syncFormatButtons, 30));
+  document.addEventListener('focusout', () => setTimeout(syncFormatButtons, 0));
 
   /* Insert-table dialog: pick a size on the grid or type it. */
   function tableDialog(fieldEl) {
@@ -387,7 +406,8 @@
     if (mod && !e.shiftKey && !e.altKey) {
       const k = e.key.toLowerCase();
       const map = { b: 'bold', i: 'italic', m: 'math' };
-      if (map[k]) { e.preventDefault(); const f = FORMATS[map[k]]; wrapSelection(t, f[0], f[1], f[2]); return; }
+      // visual fields handle their own shortcuts (js/richfield.js)
+      if (map[k]) { if (t.isRichField) return; e.preventDefault(); const f = FORMATS[map[k]]; wrapSelection(t, f[0], f[1], f[2]); return; }
       if (e.key === 'Enter') {
         const card = t.closest('.qcard');
         if (card) { e.preventDefault(); const q = findQ(card.dataset.id); addQuestion(q ? q.type : 'MC', indexOf(card.dataset.id) + 1); }
@@ -1313,14 +1333,15 @@
         h('ul', null,
           h('li', null, h('b', null, 'Form'), ': one card per question. Select a letter bubble to mark the correct answer. Press Enter in a choice to add the next one, and Ctrl+Enter (⌘+Enter) to start a new question of the same type.'),
           h('li', null, h('b', null, 'Text'), ': type or paste a whole quiz, for example from Word. The cheat sheet under the editor shows every type. Both views edit the same questions.')),
-        h('h3', null, 'Formatting inside any field'),
+        h('h3', null, 'Formatting'),
+        h('p', null, 'In Form mode the fields show formatting the way students will see it. Select some text and use the toolbar or a shortcut. Click a formula to edit it. In Text mode, type the markers instead.'),
         h('div', { class: 'tbl-wrap' }, h('table', { class: 'help-table' }, h('tbody', null,
-          h('tr', null, h('th', null, 'Type this'), h('th', null, 'To get')),
-          h('tr', null, h('td', null, h('code', { text: '**bold**' })), h('td', null, 'bold (Ctrl+B)')),
-          h('tr', null, h('td', null, h('code', { text: '_italic_' })), h('td', null, 'italic (Ctrl+I)')),
-          h('tr', null, h('td', null, h('code', { text: 'x^2^  H~2~O' })), h('td', null, 'superscript, subscript')),
-          h('tr', null, h('td', null, h('code', { text: '$\\frac{1}{2}$  $$E=mc^2$$' })), h('td', null, 'math in LaTeX (Ctrl+M); preview shows it rendered')),
-          h('tr', null, h('td', null, h('code', { text: '\\*  \\_  \\$' })), h('td', null, 'a literal *, _ or $'))))),
+          h('tr', null, h('th', null, 'Form mode'), h('th', null, 'Text mode: type this'), h('th', null, 'To get')),
+          h('tr', null, h('td', null, 'B or Ctrl+B'), h('td', null, h('code', { text: '**bold**' })), h('td', null, h('b', null, 'bold'))),
+          h('tr', null, h('td', null, 'I or Ctrl+I'), h('td', null, h('code', { text: '_italic_' })), h('td', null, h('i', null, 'italic'))),
+          h('tr', null, h('td', null, 'x² / x₂'), h('td', null, h('code', { text: 'x^2^  H~2~O' })), h('td', null, 'superscript, subscript')),
+          h('tr', null, h('td', null, '∑ math or Ctrl+M'), h('td', null, h('code', { text: '$\\frac{1}{2}$  $$E=mc^2$$' })), h('td', null, 'math in LaTeX')),
+          h('tr', null, h('td', null, '(just type it)'), h('td', null, h('code', { text: '\\*  \\_  \\$' })), h('td', null, 'a literal *, _ or $'))))),
         h('h3', null, 'Question types Blackboard Ultra can upload'),
         h('div', { class: 'tbl-wrap' }, h('table', { class: 'help-table' }, h('tbody', null,
           h('tr', null, h('th', null, 'Code'), h('th', null, 'Type'), h('th', null, 'Text-mode tag')),
