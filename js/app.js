@@ -1220,7 +1220,9 @@
         return;
       }
       let res;
-      if (/\.xlsx?$/i.test(file.name)) {
+      if (/\.zip$/i.test(file.name)) {
+        res = await BQ.poolRead.read(await file.arrayBuffer());
+      } else if (/\.xlsx?$/i.test(file.name)) {
         const X = await loadXlsx();
         const wb = X.read(await file.arrayBuffer(), { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
@@ -1239,10 +1241,13 @@
     const n = res.questions.length;
     const problems = res.issues.filter(i => i.level !== 'info');
     const invalid = res.questions.filter(q => BQ.validate(q).errors.length).length;
+    const pics = res.images ? Object.keys(res.images).length : 0;
+    const where = (i) => (i.question ? 'Question ' + i.question + ': ' : i.line ? 'Line ' + i.line + ': ' : '');
     return h('div', { class: 'result' },
-      h('p', null, n ? 'Found ' + n + (n === 1 ? ' question' : ' questions') + ' in ' + name + ' (read as ' + res.kind + ').' : 'No questions found in ' + name + '.'),
+      h('p', null, n ? 'Found ' + n + (n === 1 ? ' question' : ' questions') + ' in ' + name + ' (read as ' + res.kind + (res.title ? ' “' + res.title + '”' : '') + ').' : 'No questions found in ' + name + '.'),
+      n && pics ? h('p', null, pics === 1 ? '1 picture comes with them.' : pics + ' pictures come with them.') : null,
       invalid ? h('p', null, invalid + ' of them need fixing after import; they are flagged in the editor.') : null,
-      res.issues.length ? h('ul', null, res.issues.slice(0, 10).map(i => h('li', null, 'Line ' + i.line + ': ' + i.message)), res.issues.length > 10 ? h('li', null, '…and ' + (res.issues.length - 10) + ' more') : null) : null,
+      res.issues.length ? h('ul', null, res.issues.slice(0, 10).map(i => h('li', null, where(i) + i.message)), res.issues.length > 10 ? h('li', null, '…and ' + (res.issues.length - 10) + ' more') : null) : null,
       problems.length && !n ? h('p', null, 'Check that each row starts with a type code such as MC, or that each question starts with a number like “1.”') : null);
   }
 
@@ -1250,9 +1255,41 @@
     const n = res.questions.length;
     return [
       { label: 'Cancel', onclick: closeModal },
-      { label: 'Replace all', disabled: !n, onclick: () => { closeModal(); project.questions = res.questions; collapsed.clear(); afterImport(n, 'Replaced with'); } },
-      { label: 'Add to end', primary: true, disabled: !n, onclick: () => { closeModal(); project.questions = project.questions.concat(res.questions); afterImport(n, 'Added'); } }
+      { label: 'Replace all', disabled: !n, onclick: () => {
+        closeModal();
+        addImportedPictures(res);
+        project.questions = res.questions;
+        if (res.title) { project.title = res.title; $('#set-title').value = res.title; }
+        pruneImages(project);
+        collapsed.clear();
+        afterImport(n, 'Replaced with');
+      } },
+      { label: 'Add to end', primary: true, disabled: !n, onclick: () => { closeModal(); addImportedPictures(res); project.questions = project.questions.concat(res.questions); afterImport(n, 'Added'); } }
     ];
+  }
+  /** Put pictures that came with imported questions into the project, renaming any that clash. */
+  function addImportedPictures(res) {
+    const imgs = cleanImages(res.images);
+    const rename = new Map();
+    for (const name in imgs) {
+      let target = name;
+      const dot = name.lastIndexOf('.');
+      for (let k = 2; project.images[target] && project.images[target].data !== imgs[name].data; k++) {
+        target = name.slice(0, dot) + '-' + k + name.slice(dot);
+      }
+      project.images[target] = imgs[name];
+      if (target !== name) rename.set(name, target);
+    }
+    if (!rename.size) return;
+    const fix = (s) => String(s || '').replace(/(<img\b[^>]*\bsrc=")([^"]+)(")/gi, (m, a, src, b) => a + (rename.get(src) || src) + b);
+    res.questions.forEach(q => {
+      q.text = fix(q.text);
+      q.options.forEach(o => { o.text = fix(o.text); });
+      q.pairs.forEach(p => { p.left = fix(p.left); p.right = fix(p.right); });
+      q.sample = fix(q.sample);
+      q.feedback.correct = fix(q.feedback.correct);
+      q.feedback.incorrect = fix(q.feedback.incorrect);
+    });
   }
   function afterImport(n, verb) {
     textStale = true;
@@ -1356,7 +1393,7 @@
           h('li', null, 'Tables: use ▦ table and pick a size, then type into the cells. Tab moves to the next cell; the table’s own buttons add or remove rows and columns and align the table left, center or right. The Text buttons align the text in the current column. In Text mode a table is written as rows like | a | b |. A line like |---|:---:|---:| under the first row makes it headings and aligns each column’s text (:---: center, ---: right); put it above the first row for alignment without headings. An optional {table align=center} line above the table centers the whole table.'),
           h('li', null, 'Don’t want feedback? Untick Feedback above the questions. The feedback fields disappear and the question bank leaves feedback out; anything already written is kept for when you switch it back on.'),
           h('li', null, 'Blackboard recommends at most 250 questions per file; larger sets download as several files.'),
-          h('li', null, 'Open project opens a project you saved earlier. Import questions reads Blackboard .txt files (to edit an old upload), CSV or Excel sheets in the same layout, and plain-text quizzes. You can also drop any of these files onto the page.'),
+          h('li', null, 'Open project opens a project you saved earlier. Import questions reads question banks (.zip) exported from Blackboard or made by this editor, Blackboard .txt files (to edit an old upload), CSV or Excel sheets in the same layout, and plain-text quizzes. You can also drop any of these files onto the page.'),
           h('li', null, 'Your work is saved in this browser automatically. Use Save project to keep a copy, move to another computer, or share with a colleague.')),
         h('p', { class: 'fineprint' }, 'Independent open-source tool. Not affiliated with or endorsed by Anthology Inc. or Blackboard.')
       ],
@@ -1550,7 +1587,7 @@
     });
     const pickFile = (accept) => { const fi = $('#file-input'); fi.accept = accept; fi.click(); };
     $('#btn-open').addEventListener('click', () => pickFile('.json'));
-    $('#btn-import').addEventListener('click', () => pickFile('.txt,.tsv,.csv,.xlsx,.xls'));
+    $('#btn-import').addEventListener('click', () => pickFile('.zip,.txt,.tsv,.csv,.xlsx,.xls'));
     initTips();
     $('#file-input').addEventListener('change', (e) => {
       const f = e.target.files && e.target.files[0];

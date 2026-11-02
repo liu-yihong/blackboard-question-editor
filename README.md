@@ -39,7 +39,8 @@ Questions stay in your browser. The page never sends them anywhere, and GitHub o
   - The .txt upload format has no place for feedback or pictures, so the .txt leaves them out and writes a picture's description instead.
 - **Projects and importing** (top bar):
   - *New project*, *Open project…* and *Save project* work with `.bbq.json` project files you can reopen or share.
-  - *Import questions…* reads an old Blackboard `.txt` upload file, a CSV or Excel sheet in the same layout, or a plain-text quiz.
+  - *Import questions…* reads a question bank `.zip` (exported from Blackboard, or made by this editor), an old Blackboard `.txt` upload file, a CSV or Excel sheet in the same layout, or a plain-text quiz.
+  - A question bank keeps its feedback and pictures. Ultra's export quirks are undone: single-answer questions it labels *Multiple Answer* come back as Multiple choice, and *Either/Or* (True/False) comes back as True/False. Point values aren't kept, and types the editor doesn't have (Ordering, Hot spot, Calculated, …) are skipped and listed.
   - *Paste questions…* takes rows copied from Excel or Google Sheets, or a quiz copied from Word.
   - Any of these files can also be dropped onto the page.
   - Hover over a top-bar button to see what it does.
@@ -75,6 +76,7 @@ js/richfield.js     the visual (WYSIWYG) fields: formatting, math, tables and pi
 js/model.js         question types and checks
 js/bbtxt.js         reading and writing Blackboard's tab-delimited files
 js/bbpool.js        writing Blackboard question pool packages (.zip) for bank import, with feedback and pictures
+js/bbpoolread.js    reading question bank packages (.zip) exported from Blackboard or made by the editor
 js/plaintext.js     Text mode (numbered quiz format)
 js/app.js           the editor interface
 vendor/             KaTeX (math preview) and SheetJS (Excel import), served locally
