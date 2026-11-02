@@ -14,6 +14,8 @@
  *   - True/False is exported as "Either/Or" with true_false.true / true_false.false.
  *   - The ids in the scoring rules don't always match the ids on the choices;
  *     then the rules list the choices in order, so position is used instead.
+ *   - Pictures added in the Ultra editor are written as links
+ *     (<a href="…bbcswebdav/xid-N_1" data-bbfile='{"render":"inline",…}'>), not <img>.
  *
  * The zip is read with the browser's own DecompressionStream, so no library is needed.
  */
@@ -105,6 +107,28 @@
   }
 
   /**
+   * Ultra's editor embeds a picture as a link rather than an <img>:
+   *   <a href="@X@EmbeddedFile.requestUrlStub@X@bbcswebdav/xid-N_1"
+   *      data-bbfile='{"render":"inline","mimeType":"image/png","alternativeText":"…"}'>…</a>
+   * Rewrite those as <img> so they are imported like any other picture.
+   * Links to other files (a PDF, say) are left alone.
+   */
+  function embeddedPicturesToImg(s) {
+    return s.replace(/<a\b([^>]*)>[\s\S]*?<\/a>/gi, (m, a) => {
+      const at = attrsOf(a);
+      if (!at['data-bbfile'] || !XID_RE.test(at.href || '')) return m;
+      let j;
+      try { j = JSON.parse(at['data-bbfile']); } catch (e) { return m; }
+      const mime = String(j.mimeType || '');
+      const isPicture = mime ? /^image\//i.test(mime) : j.render === 'inline';
+      if (!isPicture) return m;
+      const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      return '<img src="' + esc(at.href) + '" data-bbfile="' + esc(at['data-bbfile']) + '"' +
+        (at.style ? ' style="' + esc(at.style) + '"' : '') + '>';
+    });
+  }
+
+  /**
    * Turn Blackboard's HTML into the editor's markup.
    * pics: Map(xid → picture name) for pictures found in the package.
    * missing: Set collecting xids whose picture wasn't in the package.
@@ -112,6 +136,7 @@
   function toMarkup(html, pics, missing) {
     let s = String(html || '');
     s = s.replace(/<!--[\s\S]*?-->/g, '');
+    s = embeddedPicturesToImg(s);
     // pictures: point them at the project's copy
     s = s.replace(/<img\b([^>]*)>/gi, (m, a) => {
       const at = attrsOf(a);
