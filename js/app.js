@@ -1044,6 +1044,7 @@
     if (ex.skipped.length && !includeInvalid) {
       openModal({
         title: ex.skipped.length === 1 ? '1 question needs fixing' : ex.skipped.length + ' questions need fixing',
+        icon: 'warn',
         body: [
           h('p', null, 'Blackboard rejects questions with these problems, so they will be left out of the file. The other ' + ex.included + ' will be included.'),
           h('ul', null, ex.skipped.slice(0, 12).map(s => h('li', null, 'Q' + (s.index + 1) + ': ' + s.errors[0])))
@@ -1073,6 +1074,7 @@
     if (ex.skipped.length && !includeInvalid) {
       openModal({
         title: ex.skipped.length === 1 ? '1 question needs fixing' : ex.skipped.length + ' questions need fixing',
+        icon: 'warn',
         body: [
           h('p', null, 'Blackboard can’t import questions with these problems, so they will be left out of the bank. The other ' + ex.included + ' will be included.'),
           h('ul', null, ex.skipped.slice(0, 12).map(s => h('li', null, 'Q' + (s.index + 1) + ': ' + s.errors[0])))
@@ -1129,6 +1131,7 @@
     download('formatting-test.txt', ex.text);
     openModal({
       title: 'Try the test file once',
+      icon: 'info',
       body: [
         h('p', null, 'Upload formatting-test.txt into a practice test in Blackboard Ultra and look at the three questions.'),
         h('ul', null,
@@ -1213,6 +1216,7 @@
         if (project.questions.length) {
           openModal({
             title: 'Open ' + file.name + '?',
+            icon: 'warn',
             body: [h('p', null, 'This replaces the ' + project.questions.length + ' questions you are editing now. Save a project file first if you want to keep them.')],
             actions: [{ label: 'Cancel', onclick: closeModal }, { label: 'Open', primary: true, onclick: () => { closeModal(); apply(); } }]
           });
@@ -1233,7 +1237,7 @@
       }
       showImportResult(res, file.name);
     } catch (err) {
-      openModal({ title: 'Couldn’t open ' + file.name, body: [h('p', null, err.message || String(err))], actions: [{ label: 'OK', primary: true, onclick: closeModal }] });
+      openModal({ title: 'Couldn’t open ' + file.name, icon: 'err', body: [h('p', null, err.message || String(err))], actions: [{ label: 'OK', primary: true, onclick: closeModal }] });
     }
   }
 
@@ -1249,6 +1253,12 @@
       invalid ? h('p', null, invalid + ' of them need fixing after import; they are flagged in the editor.') : null,
       res.issues.length ? h('ul', null, res.issues.slice(0, 10).map(i => h('li', null, where(i) + i.message)), res.issues.length > 10 ? h('li', null, '…and ' + (res.issues.length - 10) + ' more') : null) : null,
       problems.length && !n ? h('p', null, 'Check that each row starts with a type code such as MC, or that each question starts with a number like “1.”') : null);
+  }
+
+  /* No questions found is an error; problems worth a look are a warning; a clean import needs no sign. */
+  function importIcon(res) {
+    if (!res.questions.length) return 'err';
+    return res.issues.some(i => i.level !== 'info') || res.questions.some(q => BQ.validate(q).errors.length) ? 'warn' : null;
   }
 
   function importActions(res) {
@@ -1299,7 +1309,7 @@
   }
 
   function showImportResult(res, name) {
-    openModal({ title: 'Import questions', body: [importSummary(res, name)], actions: importActions(res) });
+    openModal({ title: 'Import questions', icon: importIcon(res), body: [importSummary(res, name)], actions: importActions(res) });
   }
 
   function pasteRowsModal() {
@@ -1337,7 +1347,8 @@
     lastFocus = document.activeElement;
     const titleId = 'm-' + Math.random().toString(36).slice(2);
     const modal = h('div', { class: 'modal' + (o.wide ? ' wide' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId },
-      h('h2', { id: titleId, text: o.title }), o.body,
+      h('h2', { id: titleId, text: o.title }),
+      o.icon ? h('div', { class: 'modal-msg' }, h('span', { class: 'sico ' + o.icon, 'aria-hidden': 'true' }), h('div', { class: 'modal-msg-body' }, o.body)) : o.body,
       o.customActions || h('div', { class: 'modal-actions' }, buildActions(o.actions || [])));
     const bd = h('div', { class: 'modal-backdrop', onmousedown: (e) => { if (e.target === bd) closeModal(); } }, modal);
     $('#modal-root').append(bd);
@@ -1457,7 +1468,7 @@
           item('new.css', 'https://newcss.net/', 'Inspired the new.css style, set in the Inter typeface (SIL Open Font License), served from this site.'),
           item('Sakura by oxalorg', 'https://github.com/oxalorg/sakura', 'Inspired the Sakura style.')
         ]),
-        h('p', { class: 'fineprint' }, 'Each style is re-created in this page’s own CSS rather than loading those frameworks, so the editor keeps working the same way in every look. All of them are MIT-licensed projects.'),
+        h('p', { class: 'fineprint' }, 'Each style is re-created in this page’s own CSS rather than loading those frameworks, so the editor keeps working the same way in every look. The error, warning, information and ready signs are drawn for this editor, one set per style; no system icons are copied. All of them are MIT-licensed projects.'),
         group('Built with', [
           item('Claude by Anthropic', 'https://www.anthropic.com/claude', 'AI assistant that researched existing tools and wrote the first version of this code with the project owner.'),
           item('GitHub Pages', 'https://pages.github.com/', 'Free static hosting.')
@@ -1577,6 +1588,7 @@
     $('#btn-new').addEventListener('click', () => {
       openModal({
         title: 'Start a new project?',
+        icon: 'warn',
         body: [h('p', null, 'This clears the ' + project.questions.length + ' questions you are editing. Save a project file first if you want to keep them.')],
         actions: [
           { label: 'Cancel', onclick: closeModal },

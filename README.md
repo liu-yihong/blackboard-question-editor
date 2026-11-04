@@ -79,6 +79,8 @@ js/bbpool.js        writing Blackboard question pool packages (.zip) for bank im
 js/bbpoolread.js    reading question bank packages (.zip) exported from Blackboard or made by the editor
 js/plaintext.js     Text mode (numbered quiz format)
 js/app.js           the editor interface
+icons/status/       error, warning, information and ready signs, one set drawn for each style
+tools/              make-status-icons.py redraws icons/status (Python 3, no packages)
 vendor/             KaTeX (math preview) and SheetJS (Excel import), served locally
 fonts/              Inter (new.css style) and IBM Plex fallback fonts, served locally
 examples/           a sample upload file, a sample text quiz and a spreadsheet template
