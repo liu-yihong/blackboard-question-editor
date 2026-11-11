@@ -49,6 +49,22 @@
     let t;
     return function () { clearTimeout(t); const a = arguments; t = setTimeout(() => fn.apply(null, a), ms); };
   }
+  /* Screen-reader announcements all go through one polite live region (#sr-status in index.html).
+     Messages that arrive close together are read as one; the same text twice is still read twice. */
+  let srTimer = null, srQueue = [];
+  function announce(msg) {
+    if (!msg) return;
+    if (!srQueue.includes(msg)) srQueue.push(msg);
+    clearTimeout(srTimer);
+    srTimer = setTimeout(() => {
+      const el = document.getElementById('sr-status');
+      if (!el) return;
+      const text = srQueue.join(' ');
+      srQueue = [];
+      el.textContent = '';
+      setTimeout(() => { el.textContent = text; }, 60);
+    }, 250);
+  }
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
@@ -237,9 +253,12 @@
   }
 
   /* ---------- change tracking & autosave ---------- */
+  let lastSaveOk = null;
   const autosave = debounce(() => {
     const ok = store.set(STORE_KEY, JSON.stringify(project));
     const el = $('#save-status');
+    if (ok !== lastSaveOk) { if (!ok) announce('Not saved in this browser. Use Save project to keep your work.'); else if (lastSaveOk === false) announce('Saving in this browser again.'); }
+    lastSaveOk = ok;
     if (ok) {
       const t = new Date();
       el.textContent = 'Saved in this browser ' + t.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -360,7 +379,8 @@
     const head = h('input', { type: 'checkbox', checked: true });
     const alignSel = h('select', { 'aria-label': 'Table alignment' },
       h('option', { value: 'left', text: 'Left' }), h('option', { value: 'center', text: 'Center' }), h('option', { value: 'right', text: 'Right' }));
-    const grid = h('div', { class: 'tpick', role: 'grid', 'aria-label': 'Table size' });
+    // Mouse shortcut only: keyboard and screen-reader users set the size with the Rows and Columns boxes.
+    const grid = h('div', { class: 'tpick', 'aria-hidden': 'true' });
     const label = h('p', { class: 'fineprint' });
     const paint = () => {
       grid.querySelectorAll('button').forEach(b => b.classList.toggle('on', +b.dataset.r < rows && +b.dataset.c < cols));
@@ -372,9 +392,8 @@
     };
     for (let r = 0; r < MAXR; r++) for (let c = 0; c < MAXC; c++) {
       grid.append(h('button', {
-        type: 'button', 'data-r': String(r), 'data-c': String(c), 'aria-label': (r + 1) + ' by ' + (c + 1),
+        type: 'button', tabindex: '-1', 'data-r': String(r), 'data-c': String(c),
         onmouseenter: () => { rows = r + 1; cols = c + 1; rIn.value = rows; cIn.value = cols; paint(); },
-        onfocus: () => { rows = r + 1; cols = c + 1; rIn.value = rows; cIn.value = cols; paint(); },
         onclick: () => { rows = r + 1; cols = c + 1; insert(); }
       }));
     }
@@ -384,7 +403,7 @@
     openModal({
       title: 'Insert a table',
       body: [
-        h('p', null, 'Point at the grid to choose a size, or type it. You can add and remove rows and columns later, and type straight into the cells.'),
+        h('p', null, 'Type the number of rows and columns, or point at the grid and click. You can add and remove rows and columns later, and type straight into the cells.'),
         grid, label,
         h('div', { class: 'tpick-row' },
           h('label', null, 'Rows', rIn), h('label', null, 'Columns', cIn),
@@ -446,7 +465,7 @@
 
   function buildCard(q, i) {
     const isCollapsed = collapsed.has(q.id);
-    const card = h('article', { class: 'qcard' + (isCollapsed ? ' collapsed' : ''), id: 'card-' + q.id, 'data-id': q.id, 'aria-label': 'Question ' + (i + 1) });
+    const card = h('article', { class: 'qcard' + (isCollapsed ? ' collapsed' : ''), id: 'card-' + q.id, 'data-id': q.id, 'aria-labelledby': 'card-h-' + q.id });
 
     const handle = h('span', { class: 'drag', title: 'Drag to reorder', draggable: 'true', 'aria-hidden': 'true', text: '⋮⋮' });
     handle.addEventListener('dragstart', (e) => {
@@ -481,6 +500,7 @@
     } }, BQ.TYPES.map(t => h('option', { value: t.code, selected: t.code === q.type }, t.label)));
 
     const head = h('header', { class: 'qhead' },
+      h('h3', { class: 'sr-only', id: 'card-h-' + q.id, text: 'Question ' + (i + 1) + ', ' + BQ.TYPE_LABEL[q.type] }),
       handle,
       h('span', { class: 'qnum', text: String(i + 1) }),
       typeSel,
@@ -544,6 +564,12 @@
     if (v.errors.length) { st.className = 'qstatus err'; st.textContent = v.errors.length === 1 ? '1 to fix' : v.errors.length + ' to fix'; }
     else if (v.warnings.length) { st.className = 'qstatus warn'; st.textContent = 'Check'; }
     else { st.className = 'qstatus ok'; st.textContent = 'Ready'; }
+    // Say so when an edit changes a question's status (not when cards are first drawn).
+    const state = st.textContent;
+    if (card.dataset.state && card.dataset.state !== state && card.isConnected) {
+      announce('Question ' + (indexOf(q.id) + 1) + ': ' + (v.errors.length ? state + '. ' + v.errors[0] : v.warnings.length ? 'check. ' + v.warnings[0] : 'ready.'));
+    }
+    card.dataset.state = state;
     card.classList.toggle('has-error', v.errors.length > 0);
     const sum = card.querySelector('[data-role="summary"]');
     if (sum) sum.textContent = BQ.rt.summary(q.text) || '(no question text yet)';
@@ -936,6 +962,8 @@
     renderDiag();
   }, 300);
 
+  let lastDiagSummary = null;
+  const announceDiag = debounce((msg) => announce(msg), 1500);  // after typing pauses
   function renderDiag() {
     const box = $('#text-diag');
     if (!lastParse) { box.replaceChildren(); return; }
@@ -946,6 +974,10 @@
       v.errors.forEach(m => items.push({ line: lastParse.lines[i], level: 'err', text: 'Q' + (i + 1) + ' (' + BQ.TYPE_LABEL[q.type] + '): ' + m }));
     });
     items.sort((a, b) => a.line - b.line);
+    const errs = items.filter(it => it.level === 'err').length;
+    const summary = errs ? errs + (errs === 1 ? ' problem' : ' problems') + ' to fix in the text.' : lastParse.questions.length ? 'No problems found in the text.' : '';
+    if (view === 'text' && summary !== lastDiagSummary && lastDiagSummary !== null) announceDiag(summary);
+    lastDiagSummary = summary;
     if (!items.length) {
       const n = lastParse.questions.length;
       box.replaceChildren(h('p', { class: 'ok-line', text: n ? n + (n === 1 ? ' question' : ' questions') + ' read, no problems found.' : 'Start typing, or paste a quiz.' }));
@@ -1400,7 +1432,8 @@
   let pendingUndo = null;
   function toast(msg, actionLabel, action) {
     const root = $('#toast-root');
-    const t = h('div', { class: 'toast', role: 'status' }, h('span', { text: msg }));
+    const t = h('div', { class: 'toast' }, h('span', { text: msg }));
+    announce(actionLabel ? msg + ' ' + actionLabel + ' with ' + (IS_MAC ? 'Command Z' : 'Control Z') + '.' : msg);
     const dismiss = () => { t.remove(); if (pendingUndo && pendingUndo.toast === t) pendingUndo = null; };
     if (actionLabel) {
       if (pendingUndo) pendingUndo.toast.remove();
@@ -1552,10 +1585,16 @@
       tip.style.top = top + 'px';
     };
     const hide = () => { clearTimeout(timer); cur = null; tip.hidden = true; };
+    // The hint stays while the pointer moves from the control onto the hint itself (WCAG 1.4.13).
+    const hideSoon = () => { clearTimeout(timer); timer = setTimeout(hide, 300); };
+    tip.addEventListener('mouseenter', () => clearTimeout(timer));
+    tip.addEventListener('mouseleave', hideSoon);
     document.querySelectorAll('[data-tip]').forEach(el => {
-      if (el.dataset.tip) el.setAttribute('aria-description', el.dataset.tip);
-      el.addEventListener('mouseenter', () => { clearTimeout(timer); timer = setTimeout(() => show(el), 350); });
-      el.addEventListener('mouseleave', hide);
+      // A hint on a label belongs to the control inside it, which is what screen readers announce.
+      const target = el.tagName === 'LABEL' ? (el.querySelector('input, select, textarea') || el) : el;
+      if (el.dataset.tip) target.setAttribute('aria-description', el.dataset.tip);
+      el.addEventListener('mouseenter', () => { clearTimeout(timer); timer = setTimeout(() => show(el), cur ? 0 : 350); });
+      el.addEventListener('mouseleave', hideSoon);
       el.addEventListener('focus', () => { if (el.matches(':focus-visible')) show(el); });
       el.addEventListener('blur', hide);
       el.addEventListener('click', hide);
@@ -1583,7 +1622,10 @@
       b.disabled = lightOnly;
     });
     const sw = $('.theme-switch');
-    if (sw) sw.dataset.tip = lightOnly ? 'This style has a light look only. Day and Night work with Studio and the clean styles.' : '';
+    if (sw) {
+      sw.dataset.tip = lightOnly ? 'This style has a light look only. Day and Night work with Studio and the clean styles.' : '';
+      if (sw.dataset.tip) sw.setAttribute('aria-description', sw.dataset.tip); else sw.removeAttribute('aria-description');
+    }
     if (save) store.set(THEME_KEY, choice);
   }
   function setSkin(name, save) {

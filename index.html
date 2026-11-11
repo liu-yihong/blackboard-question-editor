@@ -42,12 +42,12 @@
   <div class="topbar-inner">
     <div class="brand">
       <span class="brand-mark" aria-hidden="true"></span>
-      <span class="brand-name">Blackboard Question Editor</span>
+      <h1 class="brand-name">Blackboard Question Editor</h1>
     </div>
     <div class="title-field">
       <label for="set-title" class="sr-only">Project title</label>
       <input id="set-title" type="text" placeholder="Untitled project" autocomplete="off">
-      <span id="save-status" class="save-status" aria-live="polite"></span>
+      <span id="save-status" class="save-status"></span>
     </div>
     <nav class="actions" aria-label="File">
       <button type="button" id="btn-new" class="btn ghost" data-tip="Start an empty project. Save the current one first if you want to keep it.">New project</button>
@@ -86,7 +86,8 @@
 </header>
 
 <main class="layout">
-  <section class="editor" aria-label="Questions">
+  <section class="editor" aria-labelledby="questions-h">
+    <h2 id="questions-h" class="sr-only">Questions</h2>
     <div class="editor-bar">
       <div class="seg" role="tablist" aria-label="Editing mode">
         <button type="button" role="tab" id="tab-form" aria-selected="true" aria-controls="form-view">Form</button>
@@ -101,7 +102,7 @@
 
     <div id="form-view" role="tabpanel" aria-labelledby="tab-form">
       <div id="qlist"></div>
-      <div class="addbar" aria-label="Add a question">
+      <div class="addbar" role="group" aria-label="Add a question">
         <span class="addbar-label">Add</span>
         <div class="addbar-buttons" id="addbar"></div>
       </div>
@@ -112,49 +113,49 @@
       <div class="text-wrap">
         <textarea id="plain" spellcheck="true" aria-label="Questions as text" aria-describedby="text-diag"></textarea>
       </div>
-      <div id="text-diag" class="diag" aria-live="polite"></div>
+      <div id="text-diag" class="diag"></div>
       <details class="cheats" open>
         <summary>Text format</summary>
         <div class="cheat-grid">
-<pre class="cheat"><span class="c-h">Multiple choice</span>
+<pre class="cheat" tabindex="0" role="group" aria-label="Example: Multiple choice"><span class="c-h">Multiple choice</span>
 1. Which system records day-to-day
    transactions such as order entry?
 a. Decision support system
 *b. Transaction processing system
 c. Executive information system</pre>
-<pre class="cheat"><span class="c-h">Multiple answer</span>  (two or more *)
+<pre class="cheat" tabindex="0" role="group" aria-label="Example: Multiple answer"><span class="c-h">Multiple answer</span>  (two or more *)
 2. Which are enterprise systems?
 *a. ERP
 *b. CRM
 c. A personal to-do list app
 *d. SCM</pre>
-<pre class="cheat"><span class="c-h">True / False</span>
+<pre class="cheat" tabindex="0" role="group" aria-label="Example: True / False"><span class="c-h">True / False</span>
 3. A data warehouse is optimized for
    analysis, not for daily transactions.
 Answer: True</pre>
-<pre class="cheat"><span class="c-h">Essay</span>  (no choices, no answer)
+<pre class="cheat" tabindex="0" role="group" aria-label="Example: Essay"><span class="c-h">Essay</span>  (no choices, no answer)
 4. Explain one way IT can create a
    competitive advantage.
 Sample: Names a strategy and a company example.</pre>
-<pre class="cheat"><span class="c-h">Matching</span>
+<pre class="cheat" tabindex="0" role="group" aria-label="Example: Matching"><span class="c-h">Matching</span>
 5. Match each security goal to its meaning.
 a. Confidentiality = Only authorized eyes
 b. Integrity = Data is accurate and unaltered
 c. Availability = Systems are up when needed</pre>
-<pre class="cheat"><span class="c-h">Fill in the blank</span>
+<pre class="cheat" tabindex="0" role="group" aria-label="Example: Fill in the blank"><span class="c-h">Fill in the blank</span>
 6. SQL stands for Structured ____ Language.
 Answer: Query; query</pre>
-<pre class="cheat"><span class="c-h">Fill in multiple blanks</span>
+<pre class="cheat" tabindex="0" role="group" aria-label="Example: Fill in multiple blanks"><span class="c-h">Fill in multiple blanks</span>
 7. A [pk] identifies each row; a [fk]
    links one table to another.
 pk: primary key
 fk: foreign key</pre>
-<pre class="cheat"><span class="c-h">Numeric</span>
+<pre class="cheat" tabindex="0" role="group" aria-label="Example: Numeric"><span class="c-h">Numeric</span>
 8. A system costs 40,000 and saves 50,000.
    What is its ROI in percent?
 Answer: 25
 Tolerance: 0.5</pre>
-<pre class="cheat"><span class="c-h">Table, picture, feedback</span>  (.zip)
+<pre class="cheat" tabindex="0" role="group" aria-label="Example: Table, picture, feedback"><span class="c-h">Table, picture, feedback</span>  (.zip)
 9. Which product costs more?
 | Product | Price |
 |---|---|
@@ -248,7 +249,9 @@ Incorrect feedback: Compare the Price column.</pre>
 </footer>
 
 <div id="modal-root"></div>
-<div id="toast-root" class="toast-root" aria-live="polite"></div>
+<div id="toast-root" class="toast-root" role="region" aria-label="Messages"></div>
+<!-- One place for screen-reader announcements (js/app.js announce()); toasts and status changes are read from here. -->
+<div id="sr-status" class="sr-only" role="status" aria-live="polite"></div>
 <input type="file" id="file-input" accept=".txt,.tsv,.csv,.xlsx,.xls,.json" hidden>
 <input type="file" id="picture-input" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" hidden>
 <!-- BODY END -->
