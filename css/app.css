@@ -162,7 +162,7 @@ html.topbar-static { scroll-padding-top: 12px; }
 }
 
 .editor-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-.editor-bar-right { display: flex; align-items: center; gap: 12px; }
+.editor-bar-right { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
 .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 3px; }
 .seg button { border: 0; background: transparent; padding: 6px 18px; border-radius: 6px; cursor: pointer; font-weight: 500; color: var(--muted); min-height: 32px; }
 .seg button[aria-selected="true"] { background: var(--ink); color: var(--surface); }

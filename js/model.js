@@ -137,6 +137,10 @@
         if (!Object.prototype.hasOwnProperty.call(ctx.images, n)) warnings.push('The picture “' + n + '” is not in this project. Insert it again with the Picture button, or it will show as text.');
       });
     }
+    // Students who use screen readers hear only the description, so a picture without one tells them nothing.
+    const noAlt = [];
+    richFields(q).forEach(f => BQ.rt.picturesWithoutAlt(f).forEach(n => { if (!noAlt.includes(n)) noAlt.push(n); }));
+    noAlt.forEach(n => warnings.push('The picture “' + n + '” has no description for students who use screen readers. In Form mode, select the picture to add one; in Text mode, fill in alt="…".'));
 
     switch (q.type) {
       case 'MC':

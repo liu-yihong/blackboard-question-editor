@@ -511,11 +511,16 @@
         iconBtn('down', 'Move down', () => move(q, 1), 'mv'),
         iconBtn('copy', 'Duplicate', () => duplicate(q)),
         iconBtn('trash', 'Delete', () => removeQ(q), 'del'),
-        iconBtn(isCollapsed ? 'chevronR' : 'chevron', isCollapsed ? 'Expand' : 'Collapse', () => toggleCollapse(q))
+        (() => {
+          const t = iconBtn(isCollapsed ? 'chevronR' : 'chevron', isCollapsed ? 'Expand' : 'Collapse', () => toggleCollapse(q));
+          t.setAttribute('aria-expanded', String(!isCollapsed));
+          t.setAttribute('aria-controls', 'qbody-' + q.id);
+          return t;
+        })()
       ));
     card.append(head);
 
-    const body = h('div', { class: 'qbody' });
+    const body = h('div', { class: 'qbody', id: 'qbody-' + q.id });
     card.append(body);
     if (!isCollapsed) {
       const ta = field({
@@ -803,6 +808,8 @@
   }
 
   /* ----- student-view preview ----- */
+  // The highlight that marks correct answers is visual only; screen readers hear this instead.
+  const SR_CORRECT = '<span class="sr-only"> (correct answer)</span>';
   function previewHtml(q) {
     const T = (s) => BQ.rt.toHtml(s || '', { math: 'preview', image: imageUrl });
     const esc = BQ.rt.escapeHtml;
@@ -814,10 +821,10 @@
       case 'MC':
       case 'MA':
         body = '<ol class="pv-opts">' + q.options.map((o, i) =>
-          '<li class="' + (o.correct ? 'is-correct' : '') + '"><span class="pv-mark' + (q.type === 'MA' ? ' sq' : '') + '">' + BQ.letter(i) + '</span><span>' + (T(o.text) || empty) + '</span></li>').join('') + '</ol>';
+          '<li class="' + (o.correct ? 'is-correct' : '') + '"><span class="pv-mark' + (q.type === 'MA' ? ' sq' : '') + '">' + BQ.letter(i) + '</span><span>' + (T(o.text) || empty) + (o.correct ? SR_CORRECT : '') + '</span></li>').join('') + '</ol>';
         break;
       case 'TF':
-        body = '<ol class="pv-opts">' + [true, false].map(v => '<li class="' + (q.tf === v ? 'is-correct' : '') + '"><span class="pv-mark">' + (v ? 'T' : 'F') + '</span><span>' + (v ? 'True' : 'False') + '</span></li>').join('') + '</ol>';
+        body = '<ol class="pv-opts">' + [true, false].map(v => '<li class="' + (q.tf === v ? 'is-correct' : '') + '"><span class="pv-mark">' + (v ? 'T' : 'F') + '</span><span>' + (v ? 'True' : 'False') + (q.tf === v ? SR_CORRECT : '') + '</span></li>').join('') + '</ol>';
         break;
       case 'ESS':
         body = '<div class="pv-box" style="width:100%;height:48px"></div>' + (q.sample.trim() ? '<p class="pv-key">Sample answer: ' + T(q.sample) + '</p>' : '');
@@ -923,6 +930,9 @@
     view = v;
     $('#tab-form').setAttribute('aria-selected', String(v === 'form'));
     $('#tab-text').setAttribute('aria-selected', String(v === 'text'));
+    // Only the selected tab is in the Tab order; arrow keys, Home and End move between tabs.
+    $('#tab-form').tabIndex = v === 'form' ? 0 : -1;
+    $('#tab-text').tabIndex = v === 'text' ? 0 : -1;
     $('#form-view').hidden = v !== 'form';
     $('#text-view').hidden = v !== 'text';
     $('#btn-collapse').hidden = v !== 'form';
@@ -1011,7 +1021,9 @@
       qs.length ? ' · ' + (bad ? ready + ' ready, ' + bad + ' to fix' : 'all ready') : '');
     const counts = {};
     qs.forEach(q => { counts[q.type] = (counts[q.type] || 0) + 1; });
-    $('#sum-types').replaceChildren(...BQ.TYPES.filter(t => counts[t.code]).map(t => h('span', { class: 'chip', title: t.label, text: t.code + ' ' + counts[t.code] })));
+    $('#sum-types').replaceChildren(...BQ.TYPES.filter(t => counts[t.code]).map(t => h('span', { class: 'chip', title: t.label },
+      h('span', { 'aria-hidden': 'true', text: t.code + ' ' + counts[t.code] }),
+      h('span', { class: 'sr-only', text: t.label + ': ' + counts[t.code] + ',' }))));
 
     const list = $('#issue-list');
     const items = [];
@@ -1673,8 +1685,16 @@
     $('#set-title').addEventListener('input', (e) => { project.title = e.target.value; changed('title'); });
     $('#tab-form').addEventListener('click', () => setView('form'));
     $('#tab-text').addEventListener('click', () => setView('text'));
-    $('#tab-form').addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') { setView('text'); $('#tab-text').focus(); } });
-    $('#tab-text').addEventListener('keydown', (e) => { if (e.key === 'ArrowLeft') { setView('form'); $('#tab-form').focus(); } });
+    const tabKeys = (e) => {
+      // two tabs: either arrow moves to the other one (wrapping), Home to the first, End to the last
+      const next = { ArrowRight: view === 'form' ? 'text' : 'form', ArrowLeft: view === 'form' ? 'text' : 'form', Home: 'form', End: 'text' }[e.key];
+      if (!next) return;
+      e.preventDefault();
+      setView(next);
+      $('#tab-' + next).focus();
+    };
+    $('#tab-form').addEventListener('keydown', tabKeys);
+    $('#tab-text').addEventListener('keydown', tabKeys);
     $('#plain').addEventListener('input', onTextInput);
     $('#opt-feedback').addEventListener('change', (e) => {
       project.settings.feedback = e.target.checked;

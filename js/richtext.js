@@ -68,6 +68,19 @@
     return out;
   }
   /** Names of project pictures used in a piece of markup. */
+  /** Pictures in a field that have no description (alt text), or still have the placeholder one. */
+  function picturesWithoutAlt(src) {
+    const out = [];
+    String(src || '').replace(TAG_RE, (m, close, name, attrs) => {
+      if (!close && name.toLowerCase() === 'img') {
+        const a = readAttrs(attrs);
+        const alt = decodeEntities(a.alt || '').trim();
+        if (!alt || /^describe the picture$/i.test(alt)) out.push((a.src || '').trim() || 'picture');
+      }
+      return m;
+    });
+    return out;
+  }
   function imagesIn(src) {
     const names = [];
     String(src || '').replace(TAG_RE, (m, close, name, attrs) => {
@@ -429,5 +442,5 @@
     return t.length > max ? t.slice(0, max - 1) + '…' : t;
   }
 
-  BQ.rt = { tableAligns, tableRuleAt, toHtml, toPlain, htmlToMarkup, texToUnicode, summary, escapeHtml, decodeEntities, imagesIn, isLocalImage, ESCAPABLE };
+  BQ.rt = { tableAligns, tableRuleAt, toHtml, toPlain, htmlToMarkup, texToUnicode, summary, escapeHtml, decodeEntities, imagesIn, picturesWithoutAlt, isLocalImage, ESCAPABLE };
 })();

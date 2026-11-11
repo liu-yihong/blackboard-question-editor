@@ -642,6 +642,7 @@
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePanel(true); }
         if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commit(); }
       });
+      keepTabInside(panel);
       document.body.append(panel);
       const anchor = chip || null;
       const place = () => {
@@ -913,7 +914,7 @@
         el('span', { class: 'rf-tgroup', role: 'group', 'aria-label': 'Text alignment in this column' }, textBtns),
         el('span', { class: 'rf-tsub', text: 'Table' }),
         el('span', { class: 'rf-tgroup', role: 'group', 'aria-label': 'Table alignment' }, alignBtns),
-        btn('Delete table', 'Delete this table', () => {
+        btn('Delete table', 'Delete table', () => {
           const next = w.nextSibling;
           w.remove();
           if (next && next.tagName === 'BR' && !next.nextSibling && !root.querySelector('[data-kind="table"]:last-child')) { /* keep placeholder */ }
@@ -982,9 +983,10 @@
         if (!missing) w.append(el('span', { class: 'rf-missing', text: 'Missing picture: ' + p.src }));
       }
       w.title = (p.alt ? p.alt + ' · ' : '') + 'Click to change the description, size or alignment';
+      w.setAttribute('aria-label', (p.alt ? 'Picture: ' + p.alt : 'Picture with no description') + '. Press Enter for settings.');
     }
     function pictureWidget(p) {
-      const w = el('span', { contenteditable: 'false', 'data-kind': 'img', tabindex: '0', role: 'button', 'aria-label': 'Picture' + (p.alt ? ': ' + p.alt : '') + '. Press Enter for settings.' },
+      const w = el('span', { contenteditable: 'false', 'data-kind': 'img', tabindex: '0', role: 'button', 'aria-label': (p.alt ? 'Picture: ' + p.alt : 'Picture with no description') + '. Press Enter for settings.' },
         el('img', { draggable: 'false' }));
       applyPicture(w, p);
       w.addEventListener('mousedown', (e) => e.preventDefault());
@@ -1048,6 +1050,7 @@
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePanel(true); }
         if (e.key === 'Enter' && e.target === alt) { e.preventDefault(); closePanel(true); }
       });
+      keepTabInside(panel);
       document.body.append(panel);
       const place = () => {
         const r = w.getBoundingClientRect();
@@ -1093,11 +1096,24 @@
     return root;
   }
   let activePanel = null;
+  /** Tab and Shift+Tab go round the controls of an open math or picture box instead of leaving it
+      (the box is added at the end of the page, so Tab would otherwise jump to the top). Escape closes it. */
+  function keepTabInside(panel) {
+    panel.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab') return;
+      const items = Array.from(panel.querySelectorAll('button, input, select, textarea, [tabindex]'))
+        .filter(x => !x.disabled && x.tabIndex >= 0 && x.getClientRects().length);
+      if (!items.length) return;
+      const first = items[0], last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
+  }
 
   function flashNote(anchor, text) {
     const n = el('div', { class: 'rf-note', role: 'status', text });
     anchor.parentNode.insertBefore(n, anchor.nextSibling);
-    setTimeout(() => n.remove(), 3500);
+    setTimeout(() => n.remove(), 6000);
   }
 
   BQ.richField = richField;
