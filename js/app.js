@@ -846,24 +846,37 @@
     const btn = document.querySelector('#card-' + q.id + ' .icon-btn[aria-label="' + (dir < 0 ? 'Move up' : 'Move down') + '"]');
     if (btn) btn.focus();
   }
+  /** Put keyboard focus on one of a card's header buttons after the list is redrawn. */
+  function focusCardTool(id, label) {
+    const b = document.querySelector('#card-' + id + ' .qtools .icon-btn[aria-label="' + label + '"]');
+    if (b) { b.focus({ preventScroll: true }); return true; }
+    return false;
+  }
   function duplicate(q) {
     const c = BQ.cloneQuestion(q);
-    project.questions.splice(indexOf(q.id) + 1, 0, c);
+    const at = indexOf(q.id) + 1;
+    project.questions.splice(at, 0, c);
     renderList();
     changed();
     flash(c.id);
-    toast('Question duplicated.');
+    focusCardTool(c.id, 'Duplicate');
+    toast('Question ' + (at + 1) + ' is a copy of question ' + at + '.');
   }
   function removeQ(q) {
     const i = indexOf(q.id);
     project.questions.splice(i, 1);
     renderList();
     changed();
+    // Focus stays in the same spot: the Delete button of the question that moved up, or of the new last one.
+    const next = project.questions[i] || project.questions[i - 1];
+    if (!next || !focusCardTool(next.id, 'Delete')) { const add = $('#addbar button'); if (add) add.focus(); }
     toast('Question ' + (i + 1) + ' deleted.', 'Undo', () => {
-      project.questions.splice(i, 0, q);
+      project.questions.splice(Math.min(i, project.questions.length), 0, q);
       renderList();
       changed();
       flash(q.id);
+      focusCardTool(q.id, 'Delete');
+      toast('Question ' + (i + 1) + ' restored.');
     });
   }
   function toggleCollapse(q) {
@@ -1351,24 +1364,64 @@
       o.icon ? h('div', { class: 'modal-msg' }, h('span', { class: 'sico ' + o.icon, 'aria-hidden': 'true' }), h('div', { class: 'modal-msg-body' }, o.body)) : o.body,
       o.customActions || h('div', { class: 'modal-actions' }, buildActions(o.actions || [])));
     const bd = h('div', { class: 'modal-backdrop', onmousedown: (e) => { if (e.target === bd) closeModal(); } }, modal);
+    // Keep Tab and Shift+Tab inside the dialog (the page behind is inert, see setBackgroundInert).
+    modal.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab') return;
+      const items = Array.from(modal.querySelectorAll('a[href], button, input, select, textarea, summary, [tabindex]'))
+        .filter(el => !el.disabled && el.tabIndex >= 0 && el.getClientRects().length);
+      if (!items.length) return;
+      const first = items[0], last = items[items.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
     $('#modal-root').append(bd);
+    setBackgroundInert(true);
     const f = modal.querySelector('textarea, input, .btn.primary, .btn');
     if (f) f.focus();
+  }
+  /** While a dialog is open, everything else on the page can't be clicked, focused or read by screen readers. */
+  function setBackgroundInert(on) {
+    Array.from(document.body.children).forEach(el => {
+      // toast-root stays live so messages shown while a dialog is open are still announced
+      if (el.id === 'modal-root' || el.id === 'toast-root' || el.tagName === 'SCRIPT') return;
+      if (on) el.setAttribute('inert', ''); else el.removeAttribute('inert');
+    });
   }
   function closeModal() {
     const root = $('#modal-root');
     if (!root.firstChild) return;
     root.replaceChildren();
+    setBackgroundInert(false);
     if (lastFocus && lastFocus.focus) lastFocus.focus();
   }
+  /* A toast with an action (Undo) has no time limit: it stays until it is used, dismissed, or replaced by the
+     next one, and Ctrl+Z (⌘Z) runs it from anywhere outside a text field, so keyboard users never race a timer. */
+  const IS_MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  let pendingUndo = null;
   function toast(msg, actionLabel, action) {
     const root = $('#toast-root');
     const t = h('div', { class: 'toast', role: 'status' }, h('span', { text: msg }));
-    if (actionLabel) t.append(h('button', { type: 'button', text: actionLabel, onclick: () => { t.remove(); action(); } }));
+    const dismiss = () => { t.remove(); if (pendingUndo && pendingUndo.toast === t) pendingUndo = null; };
+    if (actionLabel) {
+      if (pendingUndo) pendingUndo.toast.remove();
+      const run = () => { dismiss(); action(); };
+      pendingUndo = { toast: t, run };
+      t.append(
+        h('button', { type: 'button', text: actionLabel, onclick: run }),
+        h('span', { class: 'toast-key', text: IS_MAC ? '⌘Z' : 'Ctrl+Z' }),
+        h('button', { type: 'button', class: 'toast-x', 'aria-label': 'Dismiss', title: 'Dismiss', html: svg('x'), onclick: dismiss }));
+    }
     root.append(t);
-    while (root.children.length > 3) root.firstChild.remove();
-    setTimeout(() => t.remove(), actionLabel ? 8000 : 4500);
+    while (root.children.length > 3) { const old = root.firstChild; if (pendingUndo && pendingUndo.toast === old) pendingUndo = null; old.remove(); }
+    if (!actionLabel) setTimeout(dismiss, 4500);
   }
+  const isTextEntry = (el) => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+  document.addEventListener('keydown', (e) => {
+    if (!pendingUndo || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z') return;
+    if (isTextEntry(e.target) || $('.modal-backdrop')) return; // text fields keep their own undo
+    e.preventDefault();
+    pendingUndo.run();
+  });
 
   function helpModal() {
     const row = (code, label, ex) => h('tr', null, h('td', null, h('code', { text: code })), h('td', { text: label }), h('td', null, h('code', { text: ex })));
@@ -1382,7 +1435,7 @@
           h('li', null, h('b', null, 'Form'), ': one card per question. Select a letter bubble to mark the correct answer. Press Enter in a choice to add the next one, and Ctrl+Enter (⌘+Enter) to start a new question of the same type.'),
           h('li', null, h('b', null, 'Text'), ': type or paste a whole quiz, for example from Word. The cheat sheet under the editor shows every type. Both views edit the same questions.')),
         h('h3', null, 'Formatting'),
-        h('p', null, 'In Form mode the fields show formatting the way students will see it. Select some text and use the toolbar or a shortcut. Click a formula to edit it. In Text mode, type the markers instead.'),
+        h('p', null, 'In Form mode the fields show formatting the way students will see it. Select some text and use the toolbar or a shortcut. To edit a formula, click it, or put the cursor right beside it and press Ctrl+M (⌘M). In Text mode, type the markers instead.'),
         h('div', { class: 'tbl-wrap' }, h('table', { class: 'help-table' }, h('tbody', null,
           h('tr', null, h('th', null, 'Form mode'), h('th', null, 'Text mode: type this'), h('th', null, 'To get')),
           h('tr', null, h('td', null, 'B or Ctrl+B'), h('td', null, h('code', { text: '**bold**' })), h('td', null, h('b', null, 'bold'))),
@@ -1405,6 +1458,7 @@
           h('li', null, 'Don’t want feedback? Untick Feedback above the questions. The feedback fields disappear and the question bank leaves feedback out; anything already written is kept for when you switch it back on.'),
           h('li', null, 'Blackboard recommends at most 250 questions per file; larger sets download as several files.'),
           h('li', null, 'Open project opens a project you saved earlier. Import questions reads question banks (.zip) exported from Blackboard or made by this editor, Blackboard .txt files (to edit an old upload), CSV or Excel sheets in the same layout, and plain-text quizzes. You can also drop any of these files onto the page.'),
+          h('li', null, 'Deleted a question by mistake? Choose Undo in the message at the bottom, or press Ctrl+Z (⌘Z) while you are not typing in a field.'),
           h('li', null, 'Your work is saved in this browser automatically. Use Save project to keep a copy, move to another computer, or share with a colleague.')),
         h('p', { class: 'fineprint' }, 'Independent open-source tool. Not affiliated with or endorsed by Anthology Inc. or Blackboard.')
       ],
@@ -1539,6 +1593,26 @@
     if (sel) sel.value = skin;
     setTheme(themeChoice, false);
     if (save) store.set(SKIN_KEY, skin);
+  }
+
+  /* ---------- sticky top bar ----------
+     The bar stays on screen only while it is short. When it wraps onto several lines (narrow windows,
+     200-400% zoom) and would take more than 22% of the window, it scrolls away with the page instead.
+     --topbar-h tells css/app.css how much room to leave above focused fields and the side panel. */
+  function watchTopbar() {
+    const bar = $('.topbar');
+    if (!bar) return;
+    const root = document.documentElement;
+    const update = () => {
+      root.classList.remove('topbar-static');
+      const sticky = getComputedStyle(bar).position === 'sticky';
+      const tall = bar.offsetHeight > innerHeight * 0.22;
+      root.classList.toggle('topbar-static', sticky && tall);
+      root.style.setProperty('--topbar-h', (sticky && !tall ? bar.offsetHeight : 0) + 'px');
+    };
+    if (globalThis.ResizeObserver) new ResizeObserver(update).observe(bar);
+    addEventListener('resize', update);
+    update();
   }
 
   /* ---------- wire up ---------- */
@@ -1679,6 +1753,7 @@
 
     applyProjectToUi();
     setView(view);
+    watchTopbar();
     autosave();
   }
   const slugKeep = (s) => String(s || '').replace(/\.txt$/i, '').replace(/[\\/:*?"<>|]+/g, '-').trim();

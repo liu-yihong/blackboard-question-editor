@@ -149,7 +149,7 @@
   function mathChip(tex, display) {
     const c = el('span', {
       class: 'rf-math' + (display ? ' rf-math-display' : ''), contenteditable: 'false', 'data-kind': 'math',
-      'data-tex': tex, 'data-display': display ? '1' : null, title: 'Math: ' + tex + ' (click to edit)'
+      'data-tex': tex, 'data-display': display ? '1' : null, title: 'Math: ' + tex + ' (click it, or put the cursor beside it and press Ctrl+M, to edit)'
     });
     c.innerHTML = mathHtml(tex, display);
     return c;
@@ -505,8 +505,32 @@
       const n = r.startContainer;
       return n.nodeType === 1 ? n : n.parentNode;
     }
+    /** The equation the caret is touching, or that the selection includes, so Ctrl+M can edit it
+        from the keyboard (equations are otherwise opened with a click). */
+    function mathNearCaret() {
+      const r = rangeInside();
+      if (!r) return null;
+      const chips = Array.from(root.querySelectorAll('.rf-math'));
+      if (!r.collapsed) return chips.find(c => r.intersectsNode(c)) || null;
+      const inChip = (r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentNode).closest('.rf-math');
+      if (inChip && root.contains(inChip)) return inChip;
+      const isChip = (n) => n && n.nodeType === 1 && n.classList.contains('rf-math');
+      const blank = (n) => n && n.nodeType === 3 && !n.data.replace(/​/g, '');
+      const c = r.startContainer, o = r.startOffset;
+      let before, after;
+      if (c.nodeType === 3) {
+        before = c.data.slice(0, o).replace(/​/g, '') ? null : c.previousSibling;
+        after = c.data.slice(o).replace(/​/g, '') ? null : c.nextSibling;
+      } else {
+        before = c.childNodes[o - 1];
+        after = c.childNodes[o];
+      }
+      while (blank(before)) before = before.previousSibling;
+      while (blank(after)) after = after.nextSibling;
+      return isChip(before) ? before : isChip(after) ? after : null;
+    }
     root.format = (kind) => {
-      if (kind === 'math') { openMathPanel(null); return; }
+      if (kind === 'math') { openMathPanel(mathNearCaret()); return; }
       if (!rangeInside()) {
         if (saved && root.contains(saved.startContainer)) restoreSelection(); else caretToEnd();
       }
