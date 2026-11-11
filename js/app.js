@@ -321,8 +321,8 @@
     const kids = [
       b('<b>B</b>', 'Bold (Ctrl+B)', fmt('bold'), null, 'bold'),
       b('<i>I</i>', 'Italic (Ctrl+I)', fmt('italic'), null, 'italic'),
-      b('x<sup>2</sup>', 'Superscript', fmt('sup'), null, 'sup'),
-      b('x<sub>2</sub>', 'Subscript', fmt('sub'), null, 'sub'),
+      b('x<sup>2</sup>', 'Superscript x2', fmt('sup'), null, 'sup'),  // the name includes the visible "x2" (WCAG 2.5.3)
+      b('x<sub>2</sub>', 'Subscript x2', fmt('sub'), null, 'sub'),
       h('span', { class: 'sep' }),
       b('<span style="font-family:var(--font-mono)">{ }</span>', 'Code (Ctrl+`)', fmt('code'), null, 'code'),
       b('∑ math', 'Math (LaTeX, Ctrl+M)', fmt('math'), null, 'math'),
